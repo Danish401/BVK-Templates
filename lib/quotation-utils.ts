@@ -3,6 +3,7 @@ import {
   buildWmwJoinedLineRows,
   normalizeLastItemRef,
   pickBlendCategoryFromWmw30Row,
+  resolveCategory1WmwHsnCode,
 } from './wmw-subform-mapping'
 
 /**
@@ -603,12 +604,23 @@ export function transformQuotationData(
       // Pieces from line item or product detail
       const pieces = item.Pieces?.trim() || productDetail.Pieces?.trim() || ''
 
+      const hsnCodeForWmwTab =
+        templateType === 'WMW'
+          ? resolveCategory1WmwHsnCode(
+              zohoData,
+              item as Record<string, unknown>,
+              productDetail as Record<string, unknown>,
+              normalizeLastItemRef(itemRef)
+            )
+          : ''
+
       lineItems.push({
         product,
         quality,
         form,
         size,
         type,
+        ...(templateType === 'WMW' ? { hsnCode: hsnCodeForWmwTab } : {}),
         delivery: formatDate(zohoData.Delivery_Date_Control),
         uom: item.UOM_Billing?.trim() || productDetail.UOM_Billing?.trim() || 'SQMT',
         qty,
