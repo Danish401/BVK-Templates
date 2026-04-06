@@ -197,6 +197,23 @@ function coalesceLinkedFirst(
   return main ? stringifyField(main[field]) : ''
 }
 
+/**
+ * HSN_Code for one Category 1 WMW goods line (same precedence as `buildWmwJoinedLineRows`):
+ * `Category_1_MM_Database_WMW_2_0` row → linked `Category_1_MM_Database_WMW_3_0` by `last_item_ref` → main `Category_1_MM_Database_WMW` row.
+ * For WMW Performa tab HSN column only; WI already uses `buildWmwJoinedLineRows`.
+ */
+export function resolveCategory1WmwHsnCode(
+  raw: ZohoQuotation | null | undefined,
+  link20Row: UnknownRecord,
+  mainProductRow: UnknownRecord,
+  lastItemRefNormalized: string
+): string {
+  if (!raw) return ''
+  const rows3 = toRowArray(raw, WMW_SUBFORM_KEYS.LINK_3_0)
+  const ext3 = pickFirstRowForRef(groupRowsByLastItemRef(rows3), lastItemRefNormalized)
+  return coalesceLinkedFirst(link20Row, ext3, mainProductRow, 'HSN_Code')
+}
+
 function coalesceMainFirst(
   main: UnknownRecord | undefined,
   row2: UnknownRecord | undefined,

@@ -11,6 +11,59 @@ interface SLSQuotationContentProps {
   rawQuotationData?: any
 }
 
+/** Normalize Zoho subform field to a row array (Creator may return one object). */
+function subformRows(raw: Record<string, unknown> | null | undefined, key: string): Record<string, unknown>[] {
+  const v = raw?.[key]
+  if (v == null) return []
+  if (Array.isArray(v)) return v.filter((r) => r != null && typeof r === 'object') as Record<string, unknown>[]
+  if (typeof v === 'object') return [v as Record<string, unknown>]
+  return []
+}
+
+/**
+ * Which WI line subform to use for SLS — aligned with getCategoryFieldsFromTemplate (Category 1 vs 2 WI).
+ * Zoho `Template` e.g. "Category 2 MM Database WI" / "Category 2 WI" → Category_2_MM_Database_WI_2_0; else Category_1.
+ */
+function resolveSlsWi20SubformKey(templateField?: string): 'Category_1_MM_Database_WI_2_0' | 'Category_2_MM_Database_WI_2_0' {
+  const t = templateField?.trim().toLowerCase() || ''
+  if (t.includes('category 2 mm database wi') || t.includes('category 2 wi')) {
+    return 'Category_2_MM_Database_WI_2_0'
+  }
+  return 'Category_1_MM_Database_WI_2_0'
+}
+
+/**
+ * SLS tab: rows from the WI_2_0 subform that matches Template (Category 1 or 2).
+ * Maps Remarks → Product, Selling_Price → unit price, Total_Sale_Value → total price; Qty → QTY/KG when present.
+ */
+function buildSlsLineItemsFromWi20Subforms(
+  raw: Record<string, unknown> | null | undefined,
+  templateField?: string
+): Array<{
+  item: number
+  product: string
+  qty: string
+  unitPrice: number
+  totalPrice: number
+}> {
+  if (!raw) return []
+  const key = resolveSlsWi20SubformKey(templateField)
+  const rows = subformRows(raw, key)
+  return rows.map((row, index) => {
+    const remarks = row.Remarks != null && row.Remarks !== undefined ? String(row.Remarks).trim() : ''
+    const sp = row.Selling_Price != null && row.Selling_Price !== undefined ? String(row.Selling_Price).replace(/,/g, '').trim() : ''
+    const tsv = row.Total_Sale_Value != null && row.Total_Sale_Value !== undefined ? String(row.Total_Sale_Value).replace(/,/g, '').trim() : ''
+    const qtyRaw = row.Qty != null && row.Qty !== undefined ? String(row.Qty).trim() : ''
+    return {
+      item: index + 1,
+      product: remarks,
+      qty: qtyRaw,
+      unitPrice: parseFloat(sp) || 0,
+      totalPrice: parseFloat(tsv) || 0,
+    }
+  })
+}
+
 export default function SLSQuotationContent({ data, shippingData, billingData, rawQuotationData }: SLSQuotationContentProps) {
   // Format date helper for DD.MM.YYYY format
   const formatSLSDate = (dateString?: string): string => {
@@ -63,20 +116,45 @@ export default function SLSQuotationContent({ data, shippingData, billingData, r
   const recipientCity = shippingData?.Shipping_City || rawQuotationData?.Shipping_City || ''
   const recipientState = `${shippingData?.Shipping_State || rawQuotationData?.Shipping_State || ''}, ${shippingData?.Shipping_Country || rawQuotationData?.Shipping_Country || 'India'}`.trim()
   
-  // Transform line items from data
-  const lineItems = data.lineItems?.map((item, index) => ({
-    item: index + 1,
-    product: `${item.product || ''}${item.quality ? `; ${item.quality}` : ''}`.trim(),
-    qty: item.qty || '',
-    unitPrice: parseFloat(item.rate?.replace(/,/g, '') || '0'),
-    totalPrice: parseFloat(item.amount?.replace(/,/g, '') || '0')
-  })) || []
+  const displayCurrency = data.currency || 'INR'
+  const slsRowsFromWi20 = buildSlsLineItemsFromWi20Subforms(
+    rawQuotationData as Record<string, unknown> | null | undefined,
+    rawQuotationData?.Template as string | undefined
+  )
+  // Prefer WI_2_0 subform mapping for SLS; keep prior behavior if both subforms are empty
+  const lineItems =
+    slsRowsFromWi20.length > 0
+      ? slsRowsFromWi20
+      : data.lineItems?.map((item, index) => ({
+          item: index + 1,
+          product: `${item.product || ''}${item.quality ? `; ${item.quality}` : ''}`.trim(),
+          qty: item.qty || '',
+          unitPrice: parseFloat(item.rate?.replace(/,/g, '') || '0'),
+          totalPrice: parseFloat(item.amount?.replace(/,/g, '') || '0'),
+        })) || []
   
-  const pleaseNote = rawQuotationData?.Please_Note || data.remarks || ''
+  // "Please Note:" line maps to Zoho `Please_Note` only when the field exists on the record.
+  // Empty string must not fall through to `Remarks` (|| would treat "" as missing).
+  const pleaseNote = (() => {
+    const raw = rawQuotationData as Record<string, unknown> | null | undefined
+    if (raw != null && Object.prototype.hasOwnProperty.call(raw, 'Please_Note')) {
+      const v = raw.Please_Note
+      return v == null ? '' : String(v)
+    }
+    return data.remarks || ''
+  })()
   const packing = rawQuotationData?.Packing || 'Included'
   const taxes = rawQuotationData?.Taxes || 'All taxes extra as applicable from time to time.'
   const payment = data.termsOfPayment || rawQuotationData?.Term_of_Payment || ''
-  const quotationValidity = rawQuotationData?.Offer_Validity || '7 Days'
+  // "Quotation Validity Time:" — Zoho `Quotation_Validity` when present; else legacy `Offer_Validity`; else default.
+  const quotationValidity = (() => {
+    const raw = rawQuotationData as Record<string, unknown> | null | undefined
+    if (raw != null && Object.prototype.hasOwnProperty.call(raw, 'Quotation_Validity')) {
+      const v = raw.Quotation_Validity
+      return v == null ? '' : String(v)
+    }
+    return rawQuotationData?.Offer_Validity || '7 Days'
+  })()
   const warrantyDisclaimer = rawQuotationData?.Warranty_Disclaimer || 'We declare that our products are wearing parts. Therefore, they are excluded from any warranty regulations.'
   const generalTerms = rawQuotationData?.General_Terms || 'All WMW goods and services are subject to the WMW General Terms and Conditions, a copy of which is available on the WMW website (www.wmwindia.com) or you may request a hard copy which we can send to you. This is in line with the wording on the website.'
   const closingStatement = rawQuotationData?.Closing_Statement || 'We hope that the above quotation is of interest and will gladly be of further help with any request you may have.'
@@ -155,8 +233,8 @@ export default function SLSQuotationContent({ data, shippingData, billingData, r
                 <th style={{ border: '1px solid #000', padding: '8px', textAlign: 'center', fontWeight: 'bold', backgroundColor: '#f0f0f0' }}>Item</th>
                 <th style={{ border: '1px solid #000', padding: '8px', textAlign: 'left', fontWeight: 'bold', backgroundColor: '#f0f0f0' }}>Product</th>
                 <th style={{ border: '1px solid #000', padding: '8px', textAlign: 'center', fontWeight: 'bold', backgroundColor: '#f0f0f0' }}>QTY/KG</th>
-                <th style={{ border: '1px solid #000', padding: '8px', textAlign: 'right', fontWeight: 'bold', backgroundColor: '#f0f0f0' }}>Unit Price/ INR</th>
-                <th style={{ border: '1px solid #000', padding: '8px', textAlign: 'right', fontWeight: 'bold', backgroundColor: '#f0f0f0' }}>Total Price/ INR</th>
+                <th style={{ border: '1px solid #000', padding: '8px', textAlign: 'right', fontWeight: 'bold', backgroundColor: '#f0f0f0' }}>{`Unit Price/ ${displayCurrency}`}</th>
+                <th style={{ border: '1px solid #000', padding: '8px', textAlign: 'right', fontWeight: 'bold', backgroundColor: '#f0f0f0' }}>{`Total Price/ ${displayCurrency}`}</th>
               </tr>
             </thead>
             <tbody>
@@ -165,8 +243,8 @@ export default function SLSQuotationContent({ data, shippingData, billingData, r
                   <td style={{ border: '1px solid #000', padding: '8px', textAlign: 'center' }}>{item.item}</td>
                   <td style={{ border: '1px solid #000', padding: '8px' }}>{item.product}</td>
                   <td style={{ border: '1px solid #000', padding: '8px', textAlign: 'center' }}>{item.qty}</td>
-                  <td style={{ border: '1px solid #000', padding: '8px', textAlign: 'right' }}>{formatCurrency(item.unitPrice, 'INR')}</td>
-                  <td style={{ border: '1px solid #000', padding: '8px', textAlign: 'right' }}>{formatCurrency(item.totalPrice, 'INR')}</td>
+                  <td style={{ border: '1px solid #000', padding: '8px', textAlign: 'right' }}>{formatCurrency(item.unitPrice, displayCurrency)}</td>
+                  <td style={{ border: '1px solid #000', padding: '8px', textAlign: 'right' }}>{formatCurrency(item.totalPrice, displayCurrency)}</td>
                 </tr>
               ))}
             </tbody>
