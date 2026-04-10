@@ -4,131 +4,29 @@ import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import PrintButton from './components/PrintButton'
-import QuotationContent from './components/QuotationContent'
-import PerformaInvoiceContent from './components/PerformaInvoiceContent'
-import ExportQuotationContent from './components/ExportQuotationContent'
-import SLSQuotationContent from './components/SLSQuotationContent'
-import GKDQuotationContent from './components/GKDQuotationContent'
-import BVKQuotationContent from './components/BVKQuotationContent'
+import QuotationTemplateByType from './components/QuotationTemplateByType'
 import { ZohoQuotationResponse, ShippingMasterResponse, BillingMasterResponse, TemplateType, ZohoQuotation, QuotationData } from '@/lib/types'
 import { transformQuotationData, determineTemplateType } from '@/lib/quotation-utils'
-
-// Mock data for WMW template design testing
-const getMockWMWData = (): QuotationData => ({
-  quotationNumber: 'ARQT/24-25/0097',
-  date: '02/08/2024',
-  buyerEnquiryNo: 'E Mail',
-  termsOfPayment: '30 Days, Cheque on Delivery',
-  incoTerms: '',
-  termsOfDelivery: 'To Pay - Godown Delivery',
-  deliveryDate: '16/08/2024',
-  followUpDate: '',
-  dueDate: '',
-  customerReference: 'E Mail',
-  customerReferenceDate: '02/08/2024',
-  currency: 'INR',
-  remarks: '',
-  lineItems: [
-    {
-      product: 'Stainless Steel Wire Cloth',
-      quality: '0316L',
-      form: 'Endless',
-      size: '3.9400x2.5500',
-      type: 'FORMX - 030',
-      delivery: '16/08/2024',
-      uom: 'SQMT',
-      qty: '2',
-      subQty: '20.0940',
-      unit: 'Two Pc',
-      pieces: '20.0940, Two Pc',
-      rate: '5,500.00',
-      amount: '110,517.00',
-    },
-    {
-      product: 'Stainless Steel Wire Cloth',
-      quality: '0316L',
-      form: 'Endless',
-      size: '3.9250x2.5500',
-      type: 'FORMX - 010',
-      delivery: '16/08/2024',
-      uom: 'SQMT',
-      qty: '3',
-      subQty: '30.0264',
-      unit: 'Three Pc',
-      pieces: '30.0264, Three Pc',
-      rate: '6,000.00',
-      amount: '180,158.40',
-    },
-  ],
-  totalAmount: 290675.40,
-})
-
-const getMockShippingData = () => ({
-  Shipping_Address_Name: 'Viva Board Pvt. Ltd.',
-  Parent_Account: 'Viva Board Pvt. Ltd.',
-  Shipping_Street: 'Survey No. 284-285, Vill & MDL: Renjal, Dist: Nizamabad',
-  Shipping_City: 'Nizamabad',
-  Shipping_State: 'Telangana',
-  Shipping_Postal_Code: '503235',
-  Shipping_Country: 'India',
-  Shipping_State_Code: '36',
-  Shipping_GST_No: '36AADCV7529D1Z9',
-  Address_Type: 'Primary',
-})
-
-const getMockBillingData = () => ({
-  Billing_Address_Name: 'Viva Board Pvt. Ltd.',
-  Parent_Account: 'Viva Board Pvt. Ltd.',
-  Billing_Street: 'Survey No. 284-285, Vill & MDL: Renjal, Dist: Nizamabad',
-  Billing_City: 'Nizamabad',
-  Billing_State: 'Telangana',
-  Billing_Postal_Code: '503235',
-  Billing_Country: 'India',
-  Billing_State_Code: '36',
-  Billing_GST_No: '36AADCV7529D1Z9',
-  Address_Type: 'Primary',
-})
-
-const headerSupplierCell = (
-  <td style={{ width: '55%', verticalAlign: 'top', border: '1px solid #000', padding: '12px' }}>
-    <div style={{ marginBottom: '8px', fontWeight: 'bold' }}>Supplier</div>
-    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-      <div style={{ width: '48px', height: '48px', background: '#1e40af', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '14px' }}>wmw</div>
-      <div style={{ fontWeight: 'bold', fontSize: '12px' }}>METAL FABRICS</div>
-    </div>
-    <div style={{ fontWeight: 'bold' }}>WMW Metal Fabrics Ltd</div>
-    <div>53, Industrial Area, Jhotwara, Jaipur-302012, Rajasthan, India</div>
-    <div>Tel: +91.141.7105151</div>
-    <div>www.wmwindia.com</div>
-    <div>info@wmwindia.com</div>
-    <div>GSTIN: 08AAACW2620D1Z8</div>
-    <div>CIN: U27109WB1995PLC068681</div>
-  </td>
-)
+import { TEST_TEMPLATE_ROUTES } from '@/lib/test-template-routes'
 
 function QuotationPageContent() {
   const searchParams = useSearchParams()
-  const [quotationData, setQuotationData] = useState<any>(null)
+  const [quotationData, setQuotationData] = useState<QuotationData | null>(null)
   const [rawQuotationData, setRawQuotationData] = useState<ZohoQuotation | null>(null)
-  const [shippingData, setShippingData] = useState<any>(null)
-  const [billingData, setBillingData] = useState<any>(null)
+  const [shippingData, setShippingData] = useState<unknown>(null)
+  const [billingData, setBillingData] = useState<unknown>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [templateType, setTemplateType] = useState<TemplateType>('WI')
 
   useEffect(() => {
     const fetchQuotation = async () => {
-      // For WMW template, use API data (no longer using mock data)
-
       try {
         setLoading(true)
         setError(null)
 
-        // Get id from URL params
         const id = searchParams.get('id') || searchParams.get('perm') || ''
-        const url = id
-          ? `/api/zoho-quotations?id=${encodeURIComponent(id)}`
-          : '/api/zoho-quotations'
+        const url = id ? `/api/zoho-quotations?id=${encodeURIComponent(id)}` : '/api/zoho-quotations'
 
         const response = await fetch(url)
         const data: ZohoQuotationResponse = await response.json()
@@ -140,43 +38,34 @@ function QuotationPageContent() {
         const quotation = data.data[0]
         setRawQuotationData(quotation)
 
-        // Determine template type from API response
         const typeOfQuotation = quotation.Type_Of_Quotation
         const templateField = quotation.Template
-
-        // Auto-set template type based on Type_Of_Quotation and Template fields
         const autoTemplateType = determineTemplateType(typeOfQuotation, templateField)
         setTemplateType(autoTemplateType)
 
-        // Transform the first quotation with determined template type and template field
         const transformed = transformQuotationData(quotation, autoTemplateType, templateField)
         setQuotationData(transformed)
 
-        // Fetch Shipping and Billing Masters if Account_Module exists
         if (quotation.Account_Module?.CRM_Account_ID) {
           const accountId = quotation.Account_Module.CRM_Account_ID
 
-          // Fetch Shipping Masters
           try {
             const shippingResponse = await fetch(`/api/zoho-shipping-masters?account_id=${encodeURIComponent(accountId)}`)
-            const shippingData: ShippingMasterResponse = await shippingResponse.json()
-            if (shippingResponse.ok && shippingData.code === 3000 && shippingData.data && shippingData.data.length > 0) {
-              // Prefer Primary address, otherwise use first one
-              const primaryShipping = shippingData.data.find((item: any) => item.Address_Type === 'Primary')
-              setShippingData(primaryShipping || shippingData.data[0])
+            const shippingResult: ShippingMasterResponse = await shippingResponse.json()
+            if (shippingResponse.ok && shippingResult.code === 3000 && shippingResult.data && shippingResult.data.length > 0) {
+              const primaryShipping = shippingResult.data.find((item: any) => item.Address_Type === 'Primary')
+              setShippingData(primaryShipping || shippingResult.data[0])
             }
           } catch (err) {
             console.error('Error fetching shipping masters:', err)
           }
 
-          // Fetch Billing Masters
           try {
             const billingResponse = await fetch(`/api/zoho-billing-masters?account_id=${encodeURIComponent(accountId)}`)
-            const billingData: BillingMasterResponse = await billingResponse.json()
-            if (billingResponse.ok && billingData.code === 3000 && billingData.data && billingData.data.length > 0) {
-              // Prefer Primary address, otherwise use first one
-              const primaryBilling = billingData.data.find((item: any) => item.Address_Type === 'Primary')
-              setBillingData(primaryBilling || billingData.data[0])
+            const billingResult: BillingMasterResponse = await billingResponse.json()
+            if (billingResponse.ok && billingResult.code === 3000 && billingResult.data && billingResult.data.length > 0) {
+              const primaryBilling = billingResult.data.find((item: any) => item.Address_Type === 'Primary')
+              setBillingData(primaryBilling || billingResult.data[0])
             }
           } catch (err) {
             console.error('Error fetching billing masters:', err)
@@ -193,116 +82,21 @@ function QuotationPageContent() {
     fetchQuotation()
   }, [searchParams])
 
-  // Re-transform data when template type changes (only if manually changed, not auto-determined)
-  useEffect(() => {
-    if (rawQuotationData) {
-      const templateField = rawQuotationData.Template
-      const transformed = transformQuotationData(rawQuotationData, templateType, templateField)
-      setQuotationData(transformed)
-    }
-  }, [templateType, rawQuotationData])
-
-  // Create header quotation/invoice cell with dynamic data or placeholder
-  // For WMW and WMW2 templates, use the structured format with borders
-  const headerQuotationCell = templateType === 'WMW2' ? (
-    quotationData ? (
-      <td style={{ width: '45%', verticalAlign: 'top', border: '1px solid #000', padding: '12px' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #000' }}>
-          <tbody>
-            <tr>
-              <td style={{ border: '1px solid #000', padding: '4px 8px', width: '50%' }}><strong>Quotation No</strong></td>
-              <td style={{ border: '1px solid #000', padding: '4px 8px', width: '30%' }}>{quotationData.quotationNumber}</td>
-              <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'right', width: '10%' }}><strong>Date</strong></td>
-              <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'right', width: '10%' }}>{quotationData.date}</td>
-            </tr>
-            <tr>
-              <td style={{ border: '1px solid #000', padding: '4px 8px' }}><strong>Buyer,S Enquiry N</strong></td>
-              <td style={{ border: '1px solid #000', padding: '4px 8px' }}>{quotationData.buyerEnquiryNo || ''}</td>
-              <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'right' }}><strong>Date</strong></td>
-              <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'right' }}>{quotationData.customerReferenceDate || quotationData.date}</td>
-            </tr>
-            <tr>
-              <td style={{ border: '1px solid #000', padding: '4px 8px' }}><strong>Terms Of Payment</strong></td>
-              <td colSpan={3} style={{ border: '1px solid #000', padding: '4px 8px' }}>{quotationData.termsOfPayment || ''}</td>
-            </tr>
-            <tr>
-              <td style={{ border: '1px solid #000', padding: '4px 8px' }}><strong>Inco Terms</strong></td>
-              <td colSpan={3} style={{ border: '1px solid #000', padding: '4px 8px' }}>{quotationData.incoTerms || ''}</td>
-            </tr>
-            <tr>
-              <td style={{ border: '1px solid #000', padding: '4px 8px' }}><strong>Terms Of Delivery</strong></td>
-              <td colSpan={3} style={{ border: '1px solid #000', padding: '4px 8px' }}>{quotationData.termsOfDelivery || ''}</td>
-            </tr>
-          </tbody>
-        </table>
-      </td>
-    ) : (
-      <td style={{ width: '45%', verticalAlign: 'top', border: '1px solid #000', padding: '12px' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #000' }}>
-          <tbody>
-            <tr>
-              <td style={{ border: '1px solid #000', padding: '4px 8px', width: '50%' }}><strong>Quotation No</strong></td>
-              <td style={{ border: '1px solid #000', padding: '4px 8px', width: '30%' }}>Loading...</td>
-              <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'right', width: '10%' }}><strong>Date</strong></td>
-              <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'right', width: '10%' }}>Loading...</td>
-            </tr>
-            <tr>
-              <td style={{ border: '1px solid #000', padding: '4px 8px' }}><strong>Buyer,S Enquiry N</strong></td>
-              <td style={{ border: '1px solid #000', padding: '4px 8px' }}></td>
-              <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'right' }}><strong>Date</strong></td>
-              <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'right' }}></td>
-            </tr>
-            <tr>
-              <td style={{ border: '1px solid #000', padding: '4px 8px' }}><strong>Terms Of Payment</strong></td>
-              <td colSpan={3} style={{ border: '1px solid #000', padding: '4px 8px' }}></td>
-            </tr>
-            <tr>
-              <td style={{ border: '1px solid #000', padding: '4px 8px' }}><strong>Inco Terms</strong></td>
-              <td colSpan={3} style={{ border: '1px solid #000', padding: '4px 8px' }}></td>
-            </tr>
-            <tr>
-              <td style={{ border: '1px solid #000', padding: '4px 8px' }}><strong>Terms Of Delivery</strong></td>
-              <td colSpan={3} style={{ border: '1px solid #000', padding: '4px 8px' }}></td>
-            </tr>
-          </tbody>
-        </table>
-      </td>
-    )
-  ) : (
-    quotationData ? (
-      <td style={{ width: '45%', verticalAlign: 'top', border: '1px solid #000', padding: '12px' }}>
-        <table style={{ width: '100%', border: 'none' }}>
-          <tbody>
-            <tr><td style={{ border: 'none', padding: '4px 0' }}><strong>Quotation No</strong></td><td style={{ border: 'none', padding: '4px 0' }}>{quotationData.quotationNumber}</td></tr>
-            <tr><td style={{ border: 'none', padding: '4px 0' }}><strong>Date</strong></td><td style={{ border: 'none', padding: '4px 0' }}>{quotationData.date}</td></tr>
-            <tr><td style={{ border: 'none', padding: '4px 0' }}><strong>Buyer&apos;s Enquiry No</strong></td><td style={{ border: 'none', padding: '4px 0' }}>{quotationData.buyerEnquiryNo || ''}</td></tr>
-            <tr><td style={{ border: 'none', padding: '4px 0' }}><strong>Terms Of Payment</strong></td><td style={{ border: 'none', padding: '4px 0' }}>{quotationData.termsOfPayment || ''}</td></tr>
-            <tr><td style={{ border: 'none', padding: '4px 0' }}><strong>Inco Terms</strong></td><td style={{ border: 'none', padding: '4px 0' }}>{quotationData.incoTerms || ''}</td></tr>
-            <tr><td style={{ border: 'none', padding: '4px 0' }}><strong>Terms Of Delivery</strong></td><td style={{ border: 'none', padding: '4px 0' }}>{quotationData.termsOfDelivery || ''}</td></tr>
-          </tbody>
-        </table>
-      </td>
-    ) : (
-      <td style={{ width: '45%', verticalAlign: 'top', border: '1px solid #000', padding: '12px' }}>
-        <table style={{ width: '100%', border: 'none' }}>
-          <tbody>
-            <tr><td style={{ border: 'none', padding: '4px 0' }}><strong>Quotation No</strong></td><td style={{ border: 'none', padding: '4px 0' }}>Loading...</td></tr>
-            <tr><td style={{ border: 'none', padding: '4px 0' }}><strong>Date</strong></td><td style={{ border: 'none', padding: '4px 0' }}>Loading...</td></tr>
-            <tr><td style={{ border: 'none', padding: '4px 0' }}><strong>Buyer&apos;s Enquiry No</strong></td><td style={{ border: 'none', padding: '4px 0' }}></td></tr>
-            <tr><td style={{ border: 'none', padding: '4px 0' }}><strong>Terms Of Payment</strong></td><td style={{ border: 'none', padding: '4px 0' }}></td></tr>
-            <tr><td style={{ border: 'none', padding: '4px 0' }}><strong>Inco Terms</strong></td><td style={{ border: 'none', padding: '4px 0' }}></td></tr>
-            <tr><td style={{ border: 'none', padding: '4px 0' }}><strong>Terms Of Delivery</strong></td><td style={{ border: 'none', padding: '4px 0' }}></td></tr>
-          </tbody>
-        </table>
-      </td>
-    )
-  )
-
-  const allTemplates: TemplateType[] = ['WI', 'WMW', 'WMW2', 'EXPORT', 'SLS', 'GKD', 'BVK']
-
-  const templateTabLabels: Partial<Record<TemplateType, string>> = {
-    WI: 'WMWD1',
-  }
+  const currentIdFromUrl = searchParams.get('id') || searchParams.get('perm') || ''
+  const routeTemplates = [
+    { key: 'ekamas', label: 'ekamas' },
+    { key: 'bashundhara', label: 'bashundhara' },
+    { key: 'adhunik', label: 'adhunik' },
+    { key: 'perfomainvoice', label: 'perfomainvoice' },
+    { key: 'seamp', label: 'seamp' },
+    { key: 'ekamass', label: 'ekamass' },
+    { key: 'wmwquotation', label: 'wmwquotation' },
+    { key: 'everite', label: 'everite' },
+    { key: 'performa', label: 'performa' },
+    { key: 'wmw-quotation', label: 'wmw-quotation' },
+    { key: 'quotation3', label: 'quotation3' },
+    { key: 'saint', label: 'saint' },
+  ] as const
 
   return (
     <main className="quotation-doc" style={{ padding: '16px' }}>
@@ -310,43 +104,101 @@ function QuotationPageContent() {
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}>
           <PrintButton />
         </div>
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', flexWrap: 'wrap', padding: '12px', backgroundColor: '#f5f5f5', borderRadius: '8px', border: '1px solid #ddd' }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            gap: '8px',
+            flexWrap: 'wrap',
+            padding: '12px',
+            backgroundColor: '#f5f5f5',
+            borderRadius: '8px',
+            border: '1px solid #ddd',
+          }}
+        >
           <div style={{ fontWeight: 'bold', marginRight: '8px', color: '#666' }}>Test Templates:</div>
-          {allTemplates.map((template) => (
-            <button
-              key={template}
-              onClick={() => {
-                setTemplateType(template)
-                if (rawQuotationData) {
-                  const transformed = transformQuotationData(rawQuotationData, template, rawQuotationData.Template)
-                  setQuotationData(transformed)
-                }
-              }}
-              style={{
-                padding: '6px 12px',
-                fontSize: '12px',
-                fontWeight: templateType === template ? 'bold' : 'normal',
-                backgroundColor: templateType === template ? '#1e40af' : '#fff',
-                color: templateType === template ? '#fff' : '#333',
-                border: `1px solid ${templateType === template ? '#1e40af' : '#ccc'}`,
-                borderRadius: '4px',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-              }}
-              onMouseEnter={(e) => {
-                if (templateType !== template) {
-                  e.currentTarget.style.backgroundColor = '#e5e7eb'
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (templateType !== template) {
-                  e.currentTarget.style.backgroundColor = '#fff'
-                }
-              }}
-            >
-              {templateTabLabels[template] ?? template}
-            </button>
-          ))}
+          {TEST_TEMPLATE_ROUTES.map((t) =>
+            currentIdFromUrl ? (
+              <Link
+                key={t.path}
+                href={`/${t.path}/${encodeURIComponent(currentIdFromUrl)}`}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '12px',
+                  fontWeight: 'normal',
+                  backgroundColor: '#fff',
+                  color: '#333',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  textDecoration: 'none',
+                }}
+              >
+                {t.label}
+              </Link>
+            ) : (
+              <span
+                key={t.path}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '12px',
+                  fontWeight: 'normal',
+                  backgroundColor: '#f3f4f6',
+                  color: '#9ca3af',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '4px',
+                  cursor: 'not-allowed',
+                }}
+                title="Load a quotation with ?id=… first"
+              >
+                {t.label}
+              </span>
+            )
+          )}
+
+          <div style={{ width: '100%', height: '1px', backgroundColor: '#ddd', margin: '8px 0' }} />
+          <div style={{ fontWeight: 'bold', marginRight: '8px', color: '#666' }}>Route Templates:</div>
+          {routeTemplates.map((t) =>
+            currentIdFromUrl ? (
+              <Link
+                key={t.key}
+                href={`/${t.key}/${encodeURIComponent(currentIdFromUrl)}`}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '12px',
+                  fontWeight: 'normal',
+                  backgroundColor: '#fff',
+                  color: '#333',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  textDecoration: 'none',
+                }}
+              >
+                {t.label}
+              </Link>
+            ) : (
+              <span
+                key={t.key}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '12px',
+                  fontWeight: 'normal',
+                  backgroundColor: '#f3f4f6',
+                  color: '#9ca3af',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '4px',
+                  cursor: 'not-allowed',
+                }}
+                title="Load a quotation with ?id=… first"
+              >
+                {t.label}
+              </span>
+            )
+          )}
         </div>
       </div>
 
@@ -368,85 +220,14 @@ function QuotationPageContent() {
         </div>
       )}
 
-      {!loading && !error && quotationData && (
-        <div className="print-container">
-          {templateType === 'EXPORT' ? (
-            <ExportQuotationContent
-              data={quotationData}
-              shippingData={shippingData}
-              billingData={billingData}
-              rawQuotationData={rawQuotationData}
-            />
-          ) : templateType === 'SLS' ? (
-            <SLSQuotationContent
-              data={quotationData}
-              shippingData={shippingData}
-              billingData={billingData}
-              rawQuotationData={rawQuotationData}
-            />
-          ) : templateType === 'GKD' ? (
-            <GKDQuotationContent
-              data={quotationData}
-              shippingData={shippingData}
-              billingData={billingData}
-              rawQuotationData={rawQuotationData}
-            />
-          ) : templateType === 'BVK' ? (
-            <BVKQuotationContent
-              data={quotationData}
-              shippingData={shippingData}
-              billingData={billingData}
-              rawQuotationData={rawQuotationData}
-            />
-          ) : templateType === 'WMW' ? (
-            <table className="print-doc-table" style={{ width: '100%', borderCollapse: 'collapse', border: 'none' }}>
-              <tbody>
-                <tr>
-                  <td style={{ verticalAlign: 'top', border: 'none', padding: 0 }}>
-                    <PerformaInvoiceContent
-                      data={quotationData}
-                      shippingData={shippingData}
-                      billingData={billingData}
-                      rawQuotationData={rawQuotationData}
-                      useWmwd1StyleLayout
-                    />
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          ) : templateType === 'WMW2' ? (
-            <table className="print-doc-table" style={{ width: '100%', borderCollapse: 'collapse', border: 'none' }}>
-              <thead>
-                <tr>
-                  {headerSupplierCell}
-                  {headerQuotationCell}
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td colSpan={2} style={{ verticalAlign: 'top', border: 'none', padding: 0 }}>
-                    <PerformaInvoiceContent
-                      data={quotationData}
-                      shippingData={shippingData}
-                      billingData={billingData}
-                      rawQuotationData={rawQuotationData}
-                    />
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          ) : (
-            <table className="print-doc-table" style={{ width: '100%', borderCollapse: 'collapse', border: 'none' }}>
-              <tbody>
-                <tr>
-                  <td style={{ verticalAlign: 'top', border: 'none', padding: 0 }}>
-                    <QuotationContent data={quotationData} shippingData={shippingData} billingData={billingData} rawQuotationData={rawQuotationData} />
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          )}
-        </div>
+      {!loading && !error && quotationData && rawQuotationData && (
+        <QuotationTemplateByType
+          templateType={templateType}
+          quotationData={quotationData}
+          rawQuotationData={rawQuotationData}
+          shippingData={shippingData}
+          billingData={billingData}
+        />
       )}
     </main>
   )
@@ -454,11 +235,13 @@ function QuotationPageContent() {
 
 export default function QuotationPage() {
   return (
-    <Suspense fallback={
-      <main style={{ padding: '20px', textAlign: 'center' }}>
-        <div>Loading quotation...</div>
-      </main>
-    }>
+    <Suspense
+      fallback={
+        <main style={{ padding: '20px', textAlign: 'center' }}>
+          <div>Loading quotation...</div>
+        </main>
+      }
+    >
       <QuotationPageContent />
     </Suspense>
   )

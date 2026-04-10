@@ -2,7 +2,8 @@
 
 import { Fragment } from 'react'
 import { QuotationData } from '@/lib/types'
-import { formatCurrency, numberToWords, formatDate } from '@/lib/quotation-utils'
+import { resolveConsigneeDisplay } from '@/lib/consignee-display'
+import { formatCurrency, numberToWords, formatDate, resolveQuotationValidity } from '@/lib/quotation-utils'
 import { buildWmwJoinedLineRows } from '@/lib/wmw-subform-mapping'
 import PrintButton from './PrintButton'
 
@@ -32,9 +33,17 @@ interface ExportQuotationContentProps {
   shippingData?: any
   billingData?: any
   rawQuotationData?: any
+  /** Shown in “Total {incoterm} Price…” row. Default CFR; WMWE1 tab passes CPT. */
+  priceHeaderIncoterm?: 'CFR' | 'CPT'
 }
 
-export default function ExportQuotationContent({ data, shippingData, billingData, rawQuotationData }: ExportQuotationContentProps) {
+export default function ExportQuotationContent({
+  data,
+  shippingData,
+  billingData,
+  rawQuotationData,
+  priceHeaderIncoterm = 'CFR',
+}: ExportQuotationContentProps) {
   // Format date helper for Export format (DD-MMM-YYYY)
   const formatExportDate = (dateString?: string): string => {
     if (!dateString) return ''
@@ -77,7 +86,7 @@ export default function ExportQuotationContent({ data, shippingData, billingData
   const accountName = rawQuotationData?.Account_Name || 'WMW METAL FABRICS LTD'
   // Get HSN Code from subform breakdown or line items, fallback to root level
  
-  const offerValidity = rawQuotationData?.Offer_Validity || '7 Days'
+  const offerValidity = resolveQuotationValidity(rawQuotationData as Record<string, unknown> | undefined)
   
   // Get raw line items and product details from Category 1 WMW for Export template
   const rawLineItems = Array.isArray(rawQuotationData?.Category_1_MM_Database_WMW_2_0)
@@ -204,11 +213,7 @@ export default function ExportQuotationContent({ data, shippingData, billingData
   const totalNetWeight = rawQuotationData?.Total_Net_Weight || ''
   const totalGrossWeight = rawQuotationData?.Total_Gross_Weight || ''
   
-  // Consignee details from shipping data
-  const consigneeName = shippingData?.Shipping_Address_Name || rawQuotationData?.Shipping_Address_Name || ''
-  const consigneeAddress = shippingData?.Shipping_Street || rawQuotationData?.Shipping_Street || ''
-  const consigneeCity = shippingData?.Shipping_City || rawQuotationData?.Shipping_City || ''
-  const consigneeCountry = shippingData?.Shipping_Country || rawQuotationData?.Shipping_Country || ''
+  const consignee = resolveConsigneeDisplay(shippingData, rawQuotationData)
   const kindAttn = shippingData?.Contact_Name || rawQuotationData?.Contact_Name || ''
   const remarks = data.remarks || rawQuotationData?.Remarks || ''
 
@@ -321,10 +326,9 @@ export default function ExportQuotationContent({ data, shippingData, billingData
                       {/* Left Column - Consignee */}
                       <td style={{ width: '50%', verticalAlign: 'top', borderTop: '1px solid #000', borderBottom: '1px solid #000', padding: '12px', margin: 0 }}>
                         <div style={{ fontWeight: 'bold', marginBottom: '6px' }}>Consignee:</div>
-                        <div style={{ marginBottom: '4px', fontWeight: 'bold' }}>{consigneeName}</div>
-                        <div style={{ marginBottom: '2px', fontSize: '10px' }}>{consigneeAddress}</div>
-                        <div style={{ marginBottom: '2px', fontSize: '10px' }}>{consigneeCity}</div>
-                        <div style={{ marginBottom: '4px', fontSize: '10px' }}>{consigneeCountry}</div>
+                        <div style={{ marginBottom: '4px', fontWeight: 'bold' }}>{consignee.name}</div>
+                        <div style={{ marginBottom: '2px', fontSize: '10px', whiteSpace: 'pre-wrap' }}>{consignee.addressBlock}</div>
+                        <div style={{ marginBottom: '4px', fontSize: '10px' }}>{consignee.country}</div>
                         {kindAttn && (
                           <div style={{ marginTop: '4px', marginBottom: '15px', fontWeight: 'bold', fontSize: '10px' }}>
                             Kind Attn: {kindAttn}
@@ -546,10 +550,10 @@ export default function ExportQuotationContent({ data, shippingData, billingData
               <td style={{ borderTop: '1px solid #000', borderBottom: '1px solid #000', padding: '5px 6px' }}></td>
             </tr>
 
-            {/* ── Total CFR ── */}
+            {/* ── Total CFR / CPT ── */}
             <tr>
               <td colSpan={7} style={{ borderTop: '1px solid #000', borderBottom: '1px solid #000', padding: '5px 6px', textAlign: 'center', fontWeight: 'bold' }}>
-                Total CFR Price upto {finalDestination || portOfDischarge || 'Benapole'} By {modeOfDelivery}:
+                Total {priceHeaderIncoterm} Price upto {finalDestination || portOfDischarge || 'Benapole'} By {modeOfDelivery}:
               </td>
               <td style={{ borderTop: '1px solid #000', borderBottom: '1px solid #000', padding: '5px 6px' }}></td>
             </tr>

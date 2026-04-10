@@ -53,7 +53,16 @@ export default function GKDQuotationContent({ data, shippingData, billingData, r
   // Direct field mapping for IGST
   const igstPercent = parseFloat(rawQuotationData?.IGST_Percent || rawQuotationData?.IGST_Rate || '0') || 0
   const igstAmount = parseFloat(rawQuotationData?.IGST_Amount || '0') || 0
-  const totalAmount = parseFloat(rawQuotationData?.Total_After_Tax || rawQuotationData?.Total_Amount_After_GST || '0') || data.totalAmount
+  const totalAmount = (() => {
+    const overall = rawQuotationData?.Overall_Grand_Total_incl_Accessories
+    if (overall != null && String(overall).trim() !== '') {
+      const n = parseFloat(String(overall).replace(/,/g, ''))
+      if (Number.isFinite(n)) return n
+    }
+    const fallback =
+      parseFloat(String(rawQuotationData?.Total_After_Tax || rawQuotationData?.Total_Amount_After_GST || '0').replace(/,/g, '')) || 0
+    return fallback || data.totalAmount
+  })()
   const amountInWords = numberToWords(totalAmount)
   const paymentTerms = data.termsOfPayment || rawQuotationData?.Term_of_Payment || ''
   
@@ -143,23 +152,23 @@ export default function GKDQuotationContent({ data, shippingData, billingData, r
                   </div>
                 </div>
 
-                {/* Item Details Table */}
+                {/* Item Details Table — borderless body like proforma reference (rules via .gkd-proforma-line-table) */}
                 <div style={{ marginBottom: '20px' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #000', fontSize: '11px', tableLayout: 'fixed', wordWrap: 'break-word' }}>
+                  <table className="gkd-proforma-line-table">
                     <thead>
                       <tr>
-                        <th style={{ border: '1px solid #000', padding: '8px', textAlign: 'center', fontWeight: 'bold', backgroundColor: '#f0f0f0', width: '5%' }}>Item</th>
-                        <th style={{ border: '1px solid #000', padding: '8px', textAlign: 'left', fontWeight: 'bold', backgroundColor: '#f0f0f0', width: '50%' }}>Product</th>
-                        <th style={{ border: '1px solid #000', padding: '8px', textAlign: 'center', fontWeight: 'bold', backgroundColor: '#f0f0f0', width: '10%' }}>Qty</th>
-                        <th style={{ border: '1px solid #000', padding: '8px', textAlign: 'right', fontWeight: 'bold', backgroundColor: '#f0f0f0', width: '15%' }}>Unit Price / INR</th>
-                        <th style={{ border: '1px solid #000', padding: '8px', textAlign: 'right', fontWeight: 'bold', backgroundColor: '#f0f0f0', width: '20%' }}>Total Price / INR</th>
+                        <th className="gkd-pl-head gkd-pl-item">Item</th>
+                        <th className="gkd-pl-head gkd-pl-product">Product</th>
+                        <th className="gkd-pl-head gkd-pl-num">Qty</th>
+                        <th className="gkd-pl-head gkd-pl-num">Unit Price / INR</th>
+                        <th className="gkd-pl-head gkd-pl-num">Total Price / INR</th>
                       </tr>
                     </thead>
                     <tbody>
                       {lineItems.map((item, index) => (
                         <tr key={index}>
-                          <td style={{ border: '1px solid #000', padding: '8px', textAlign: 'center', verticalAlign: 'top' }}>{item.item}</td>
-                          <td style={{ border: '1px solid #000', padding: '8px', verticalAlign: 'top' }}>
+                          <td className="gkd-pl-cell gkd-pl-item">{item.item}.</td>
+                          <td className="gkd-pl-cell gkd-pl-product">
                             <div style={{ marginBottom: '4px' }}>
                               <strong>Product:</strong> {item.productCode} {item.productName}
                             </div>
@@ -167,9 +176,9 @@ export default function GKDQuotationContent({ data, shippingData, billingData, r
                               {item.description}
                             </div>
                           </td>
-                          <td style={{ border: '1px solid #000', padding: '8px', textAlign: 'center', verticalAlign: 'top' }}>{item.qty}</td>
-                          <td style={{ border: '1px solid #000', padding: '8px', textAlign: 'right', verticalAlign: 'top' }}>{formatCurrency(item.unitPrice, 'INR')}</td>
-                          <td style={{ border: '1px solid #000', padding: '8px', textAlign: 'right', verticalAlign: 'top' }}>{formatCurrency(item.totalPrice, 'INR')}</td>
+                          <td className="gkd-pl-cell gkd-pl-num">{item.qty}</td>
+                          <td className="gkd-pl-cell gkd-pl-num">{formatCurrency(item.unitPrice, 'INR')}</td>
+                          <td className="gkd-pl-cell gkd-pl-num">{formatCurrency(item.totalPrice, 'INR')}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -186,13 +195,24 @@ export default function GKDQuotationContent({ data, shippingData, billingData, r
                           <div>{formatCurrency(igstAmount, 'INR')}</div>
                         </div>
                       )}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #000', fontWeight: 'bold' }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          marginTop: '8px',
+                          paddingTop: '8px',
+                          fontWeight: 'bold',
+                        }}
+                      >
                         <div><strong>Total Amount:</strong></div>
                         <div>{formatCurrency(totalAmount, 'INR')}</div>
                       </div>
                     </div>
                   </div>
-                  <div style={{ marginTop: '12px', marginBottom: '12px' }}>
+                  <div
+                    className="gkd-proforma-amount-words"
+                    style={{ marginTop: '12px', marginBottom: '12px', paddingBottom: '12px' }}
+                  >
                     <strong>Amount in Words:</strong> {amountInWords}
                   </div>
                 </div>

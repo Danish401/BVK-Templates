@@ -1,6 +1,11 @@
 import type { ReactNode } from 'react'
 import { QuotationData } from '@/lib/types'
-import { formatCurrency, formatAmountInWords } from '@/lib/quotation-utils'
+import {
+  formatCurrency,
+  formatAmountInWords,
+  resolveQuotationValidity,
+  DEFAULT_WMW_PERFORMA_QUOTATION_VALIDITY_PHRASE,
+} from '@/lib/quotation-utils'
 
 export interface QuotationSummarySectionProps {
   data: QuotationData
@@ -30,6 +35,10 @@ export interface QuotationSummarySectionProps {
    * WMW Performa: static “Remarks :” list in the original left-column position beside tax rows.
    */
   notesMergedSlot?: ReactNode
+  /** Zoho raw record: drives “QUOTATION VALIDITY” via `Quotation_Validity` / `Offer_Validity`. */
+  rawQuotationData?: Record<string, unknown> | null
+  /** When Zoho fields are empty; defaults to {@link DEFAULT_WMW_PERFORMA_QUOTATION_VALIDITY_PHRASE}. */
+  quotationValidityDefault?: string
 }
 
 function fmtGstRateLabel(rate: number): string {
@@ -58,14 +67,49 @@ export default function QuotationSummarySection({
   wmwSeamChargeTotal = 0,
   sevenColumnGoodsLayout = false,
   notesMergedSlot,
+  rawQuotationData,
+  quotationValidityDefault = DEFAULT_WMW_PERFORMA_QUOTATION_VALIDITY_PHRASE,
 }: QuotationSummarySectionProps) {
+  const quotationValidityDisplay = resolveQuotationValidity(rawQuotationData ?? undefined, quotationValidityDefault)
   const totalAfterFormatted = formatCurrency(totalAfterTax)
   const cur = data.currency || 'INR'
 
-  const taxRows: { label: string; value: string; bold?: boolean }[] = [
-    { label: 'Freight Charge', value: formatCurrency(wmwFreightChargeTotal, cur) },
-    { label: 'Packing Charges', value: formatCurrency(wmwPackingChargeTotal, cur) },
-    { label: 'Seam Charges', value: formatCurrency(wmwSeamChargeTotal, cur) },
+  const wmwChargeVisible = (n: number) => Number.isFinite(n) && n !== 0
+
+  type WmwBandRow = {
+    leftMain: ReactNode
+    leftSub: string
+    label: string
+    value: string
+  }
+
+  const wmwBandRows: WmwBandRow[] = []
+  if (wmwChargeVisible(wmwFreightChargeTotal)) {
+    wmwBandRows.push({
+      leftMain: 'Freight',
+      leftSub: 'Excl.',
+      label: 'Freight Charge',
+      value: formatCurrency(wmwFreightChargeTotal, cur),
+    })
+  }
+  if (wmwChargeVisible(wmwPackingChargeTotal)) {
+    wmwBandRows.push({
+      leftMain: <strong>Insurance</strong>,
+      leftSub: 'Incl.',
+      label: 'Packing Charges',
+      value: formatCurrency(wmwPackingChargeTotal, cur),
+    })
+  }
+  if (wmwChargeVisible(wmwSeamChargeTotal)) {
+    wmwBandRows.push({
+      leftMain: <strong>Packing</strong>,
+      leftSub: 'Incl.',
+      label: 'Seam Charges',
+      value: formatCurrency(wmwSeamChargeTotal, cur),
+    })
+  }
+
+  const summaryTaxRows: { label: string; value: string; bold?: boolean }[] = [
     { label: 'Total Amount Before Tax', value: formatCurrency(totalBeforeTax, cur), bold: true },
     { label: `Add CGST @ ${fmtGstRateLabel(cgstRate)}`, value: formatCurrency(cgstAmount) },
     { label: `Add SGST @ ${fmtGstRateLabel(sgstRate)}`, value: formatCurrency(sgstAmount) },
@@ -74,7 +118,7 @@ export default function QuotationSummarySection({
     { label: 'Total Amount After GST', value: totalAfterFormatted, bold: true },
   ]
 
-  const notesRowSpan = taxRows.length - 3
+  const notesRowSpan = summaryTaxRows.length
 
   /**
    * WMWD1: first 5 goods cols (desc+hsn+del+uom+qty) split 3+2 so Freight/Excl occupy that whole band.
@@ -109,46 +153,26 @@ export default function QuotationSummarySection({
       <tbody>
         <tr>
           <td className="qs-cell qs-cell--validity" colSpan={validityColSpan}>
-            <strong>QUOTATION VALIDITY :</strong> 07 Days from the date of Quotation
+            <strong>QUOTATION VALIDITY :</strong> {quotationValidityDisplay}
           </td>
           <td className="qs-cell qs-cell--total-inr">Total INR</td>
           <td className="qs-cell qs-cell--total-amt">{totalAmountFormatted}</td>
         </tr>
 
-        <tr className="qs-hsn-tax-row">
-          <td className="qs-cell qs-hsn-grid__col-label" colSpan={leftLabelColSpan}>
-            Freight
-          </td>
-          <td className="qs-cell qs-hsn-grid__col-excl" colSpan={leftExclColSpan}>
-            Excl.
-          </td>
-          <td className="qs-cell qs-tax-label">{taxRows[0].label}</td>
-          <td className="qs-cell qs-tax-num">{taxRows[0].value}</td>
-        </tr>
+        {wmwBandRows.map((band, bandIdx) => (
+          <tr key={`wmw-band-${bandIdx}`} className="qs-hsn-tax-row">
+            <td className="qs-cell qs-hsn-grid__col-label" colSpan={leftLabelColSpan}>
+              {band.leftMain}
+            </td>
+            <td className="qs-cell qs-hsn-grid__col-excl" colSpan={leftExclColSpan}>
+              {band.leftSub}
+            </td>
+            <td className="qs-cell qs-tax-label">{band.label}</td>
+            <td className="qs-cell qs-tax-num">{band.value}</td>
+          </tr>
+        ))}
 
-        <tr className="qs-hsn-tax-row">
-          <td className="qs-cell qs-hsn-grid__col-label" colSpan={leftLabelColSpan}>
-            <strong>Insurance</strong>
-          </td>
-          <td className="qs-cell qs-hsn-grid__col-excl" colSpan={leftExclColSpan}>
-            Incl.
-          </td>
-          <td className="qs-cell qs-tax-label">{taxRows[1].label}</td>
-          <td className="qs-cell qs-tax-num">{taxRows[1].value}</td>
-        </tr>
-
-        <tr className="qs-hsn-tax-row">
-          <td className="qs-cell qs-hsn-grid__col-label" colSpan={leftLabelColSpan}>
-            <strong>Packing</strong>
-          </td>
-          <td className="qs-cell qs-hsn-grid__col-excl" colSpan={leftExclColSpan}>
-            Incl.
-          </td>
-          <td className="qs-cell qs-tax-label">{taxRows[2].label}</td>
-          <td className="qs-cell qs-tax-num">{taxRows[2].value}</td>
-        </tr>
-
-        {taxRows.slice(3).map((row, i) => (
+        {summaryTaxRows.map((row, i) => (
           <tr key={row.label} className={row.bold ? 'qs-tax-row--bold' : undefined}>
             {i === 0 ? (
               <td className="qs-cell qs-notes-merged" colSpan={notesColSpan} rowSpan={notesRowSpan}>

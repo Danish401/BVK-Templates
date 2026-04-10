@@ -2,6 +2,9 @@
 
 import Link from 'next/link'
 import type { QuotationData } from '@/lib/types'
+import { resolveConsigneeDisplay } from '@/lib/consignee-display'
+import { quotationRichText } from '@/lib/quotation-rich-text'
+import { resolveQuotationValidity } from '@/lib/quotation-utils'
 import WmwGoodsTable from './WmwGoodsTable'
 
 interface WmwInvoiceContentProps {
@@ -23,11 +26,7 @@ export default function WmwInvoiceContent({
   const buyerEnquiryDate = data.customerReferenceDate || rawQuotationData?.Customer_Reference_Date || ''
   const otherReference = rawQuotationData?.Additional_info || ''
 
-  const consigneeName =
-    shippingData?.Shipping_Address_Name || rawQuotationData?.Shipping_Address_Name || 'Pt. Royal Board'
-  const consigneeAddress = shippingData?.Shipping_Street || rawQuotationData?.Shipping_Street || ''
-  const consigneeCity = shippingData?.Shipping_City || rawQuotationData?.Shipping_City || 'Jakarta'
-  const consigneeCountry = shippingData?.Shipping_Country || rawQuotationData?.Shipping_Country || 'Indonesia'
+  const consignee = resolveConsigneeDisplay(shippingData, rawQuotationData)
   const kindAttn = shippingData?.Contact_Name || rawQuotationData?.Contact_Name || 'Mr. Anthony'
 
   const countryOfOrigin = rawQuotationData?.Billing_Country || 'India'
@@ -43,6 +42,7 @@ export default function WmwInvoiceContent({
   const swiftCode = rawQuotationData?.Swift_Code || 'IOBAINBB158'
   const accountNumber = rawQuotationData?.Account_Number || '015802000003059'
   const accountName = rawQuotationData?.Account_Name || 'WMW METAL FABRICS LTD.'
+  const ourBankDetails = quotationRichText(rawQuotationData, 'Our_Bank_Details')
 
   return (
     <>
@@ -124,9 +124,9 @@ export default function WmwInvoiceContent({
                 <tr>
                   <td style={{ width: '53%', verticalAlign: 'top', border: '1px solid #000', padding: '8px' }}>
                     <div style={{ fontWeight: 'bold', fontSize: '11px', marginBottom: '6px' }}>Consignee</div>
-                    <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{consigneeName}</div>
-                    <div style={{ fontSize: '12px', lineHeight: 1.15 }}>{consigneeAddress}</div>
-                    <div style={{ fontWeight: 'bold', fontSize: '12px', lineHeight: 1.15 }}>{consigneeCity ? `${consigneeCity}, ${consigneeCountry}` : consigneeCountry}</div>
+                    <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{consignee.name}</div>
+                    <div style={{ fontSize: '12px', lineHeight: 1.15, whiteSpace: 'pre-wrap' }}>{consignee.addressBlock}</div>
+                    <div style={{ fontWeight: 'bold', fontSize: '12px', lineHeight: 1.15 }}>{consignee.country}</div>
                     <div style={{ marginTop: '16px', color: '#3b82f6', fontWeight: 'bold', fontSize: '12px' }}>
                       Attn : {kindAttn}
                     </div>
@@ -148,6 +148,19 @@ export default function WmwInvoiceContent({
                           <td colSpan={2} style={{ border: '1px solid #000', padding: '2px 6px 4px 6px', verticalAlign: 'top' }}>
                             <div style={{ fontWeight: 'bold', textDecoration: 'underline', marginBottom: '2px' }}>Terms of Payment</div>
                             <div style={{ fontWeight: 'bold' }}>{termsOfPayment}</div>
+                            {ourBankDetails ? (
+                              <div
+                                style={{
+                                  marginTop: '8px',
+                                  fontWeight: 'normal',
+                                  fontSize: '10px',
+                                  lineHeight: 1.35,
+                                  whiteSpace: 'pre-wrap',
+                                }}
+                              >
+                                {ourBankDetails}
+                              </div>
+                            ) : null}
                           </td>
                         </tr>
                         <tr>
@@ -219,7 +232,7 @@ export default function WmwInvoiceContent({
                             HS Code: {rawQuotationData?.HS_Code || '7314.12.00'}
                           </td>
                           <td style={{ width: '40%', border: '1px solid #000', padding: '4px 6px' }}>
-                            Offer Validity : {rawQuotationData?.Offer_Validity || '7 Days'}
+                            Offer Validity : {resolveQuotationValidity(rawQuotationData as Record<string, unknown> | undefined)}
                           </td>
                         </tr>
                         <tr>

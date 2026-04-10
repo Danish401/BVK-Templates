@@ -4,6 +4,12 @@ import { Fragment } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import type { QuotationData } from '@/lib/types'
 import { formatCurrency, numberToWords } from '@/lib/quotation-utils'
+import {
+  filterNonZeroWmwChargeRows,
+  quotationScalarFieldPresent,
+  resolveWmwChargeTotals,
+  WMW_STANDARD_CHARGE_NAMES,
+} from '@/lib/wmw-subform-mapping'
 
 const bd: CSSProperties = { border: '1px solid #000' }
 
@@ -56,6 +62,31 @@ const descGrid: CSSProperties = {
   textAlign: 'left',
 }
 
+const metaRowLine: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: '60px 10px 1fr',
+  marginBottom: '3px',
+  fontWeight: 'bold',
+  whiteSpace: 'nowrap',
+}
+
+const metaRowValue: CSSProperties = {
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+}
+
+/** Mesh column: first numeric value after the 4th dot in Product_Code, shown as `value/Inch`. */
+function meshInchFromProductCode(productCode: string): string {
+  const s = String(productCode ?? '').trim()
+  if (!s) return ''
+  const parts = s.split('.')
+  if (parts.length < 5) return ''
+  const tail = parts.slice(4).join('.')
+  const m = tail.match(/\d+(?:\.\d+)?/)
+  return m ? `${m[0]}/Inch` : ''
+}
+
 export default function AdhunikGoodsTable({ data, rawQuotationData, shippingData, headerNode, footerNode }: AdhunikGoodsTableProps) {
   const rawLineItems = (rawQuotationData?.Category_1_MM_Database_WMW_2_0 as any[]) || []
   const rawProductDetails = (rawQuotationData?.Category_1_MM_Database_WMW as any[]) || []
@@ -64,6 +95,72 @@ export default function AdhunikGoodsTable({ data, rawQuotationData, shippingData
 
   const currency = data.currency || rawQuotationData?.Currency || 'USD'
   const currencySymbol = currency
+
+  const template = String(rawQuotationData?.Template ?? '').trim().toLowerCase()
+  const isCategory2Selected = template.includes('category 2') && template.includes('wi')
+  const grossWeight = rawQuotationData?.Gross_Weight || rawQuotationData?.Total_Gross_Weight
+
+  const toRowArray = (v: unknown): any[] => {
+    if (v == null) return []
+    if (Array.isArray(v)) return v
+    if (typeof v === 'object') return [v]
+    return []
+  }
+
+  const parseNumber = (v: unknown): number => {
+    const n = parseFloat(String(v ?? '').replace(/,/g, '').trim())
+    return Number.isFinite(n) ? n : 0
+  }
+
+  /** First non-empty trimmed scalar among records, in order (matches WMW join precedence: 3_0 → 2_0 line → main). */
+  const firstField = (records: any[], field: string): string => {
+    for (const r of records) {
+      if (r == null) continue
+      const v = String((r as Record<string, unknown>)[field] ?? '').trim()
+      if (v) return v
+    }
+    return ''
+  }
+
+  const pickNetWeightPerPc = (itemRef: string, index: number): number => {
+    if (!rawQuotationData) return 0
+
+    if (!isCategory2Selected) {
+      // Category 1: Category_1_MM_Database_WMW_3_0 (join on last_item_ref)
+      const rows = toRowArray((rawQuotationData as any).Category_1_MM_Database_WMW_3_0)
+      const r =
+        (itemRef
+          ? rows.find((x: any) => String(x?.last_item_ref ?? x?.Last_item_ref ?? '').trim() === itemRef)
+          : undefined) || rows[index]
+      const v = r?.Net_Weight
+      return parseNumber(v)
+    }
+
+    // Category 2: prefer Category_2_MM_Database_WMW_3_0.Net_Weight when present (data may come in WMW 3.0),
+    // fallback to Category_2_MM_Database_WI_3_0.Net_Weight.
+    const rowsWmw = toRowArray((rawQuotationData as any).Category_2_MM_Database_WMW_3_0)
+    const lineRef = String(index + 1)
+    const rWmw =
+      (itemRef
+        ? rowsWmw.find((x: any) => String(x?.last_item_ref ?? x?.Last_item_ref ?? '').trim() === itemRef)
+        : undefined) ||
+      rowsWmw.find((x: any) => String(x?.Line_Item_ref ?? '').trim() === lineRef) ||
+      rowsWmw[index]
+    const wmwWeight = parseNumber(rWmw?.Net_Weight)
+    if (wmwWeight > 0) return wmwWeight
+
+    const rowsWi = toRowArray((rawQuotationData as any).Category_2_MM_Database_WI_3_0)
+    const rWi = rowsWi.find((x: any) => String(x?.Line_Item_ref ?? '').trim() === lineRef) || rowsWi[index]
+    return parseNumber(rWi?.Net_Weight)
+  }
+
+  const pickFitmentNetWeightPerPc = (index: number): number => {
+    if (!rawQuotationData) return 0
+    const rows = toRowArray((rawQuotationData as any).Product_Fitments2_0)
+    const sNo = String(index + 1)
+    const r = rows.find((x: any) => String(x?.S_No ?? '').trim() === sNo) || rows[index]
+    return parseNumber(r?.Net_Weight)
+  }
 
   const subformBreakdown = rawQuotationData?.Subform_Breakdown || []
   const category1WMWSubform = subformBreakdown.find(
@@ -77,8 +174,25 @@ export default function AdhunikGoodsTable({ data, rawQuotationData, shippingData
   const subformTotalSaleValue = parseFloat(activeSubform?.Total_Sale_Value || '0') || 0
   const subformCostBeforeTax = parseFloat(activeSubform?.Cost_Before_Tax || '0') || 0
 
-  const packingFreight = parseFloat(rawQuotationData?.Packing_Freight || '0') || 390.00
   const transaction = parseFloat(rawQuotationData?.Transaction_Charges || '0') || 0
+
+  const chargeTotalsResolved = resolveWmwChargeTotals(rawQuotationData)
+  const freightChargeAmt = chargeTotalsResolved.freightTotal
+  const packingChargeAmt = chargeTotalsResolved.packingTotal
+  const seamChargeAmt = chargeTotalsResolved.seamTotal
+  const otherChargesAmt = quotationScalarFieldPresent(rawQuotationData?.Other_Charges)
+    ? parseFloat(String(rawQuotationData?.Other_Charges).replace(/,/g, '').trim()) || 0
+    : 0
+  const typeOfOtherCharges = String(rawQuotationData?.Type_of_Other_Charges ?? '').trim()
+  const otherChargesLabel = typeOfOtherCharges ? `Other Charges (${typeOfOtherCharges})` : 'Other Charges'
+  const chargesSum = freightChargeAmt + packingChargeAmt + seamChargeAmt + otherChargesAmt
+
+  const adhunikChargeRows: readonly [string, number][] = filterNonZeroWmwChargeRows([
+    [WMW_STANDARD_CHARGE_NAMES.FREIGHT, freightChargeAmt],
+    [WMW_STANDARD_CHARGE_NAMES.PACKING, packingChargeAmt],
+    [WMW_STANDARD_CHARGE_NAMES.SEAM, seamChargeAmt],
+    [otherChargesLabel, otherChargesAmt],
+  ])
 
   const countryOfDestination = rawQuotationData?.Shipping_Country || shippingData?.Shipping_Country || ''
   const portOfDischarge = rawQuotationData?.Port_of_Discharge || ''
@@ -96,8 +210,49 @@ export default function AdhunikGoodsTable({ data, rawQuotationData, shippingData
         ) || rawProductDetails[index] || {}
       : rawProductDetails[index] || {}
 
+    const rows3Linked = toRowArray((rawQuotationData as any)?.Category_1_MM_Database_WMW_3_0)
+    const ext3 =
+      (itemRef
+        ? rows3Linked.find(
+            (x: any) => String(x?.last_item_ref ?? x?.Last_item_ref ?? '').trim() === itemRef
+          )
+        : undefined) || rows3Linked[index]
+
+    const wi20Rows = toRowArray((rawQuotationData as any)?.Category_1_MM_Database_WI_2_0)
+    const lineItemRef = String(index + 1)
+    const wi20Line =
+      (itemRef
+        ? wi20Rows.find(
+            (x: any) => String(x?.last_item_ref ?? x?.Last_item_ref ?? '').trim() === itemRef
+          )
+        : undefined) ||
+      wi20Rows.find((x: any) => String(x?.Line_Item_ref ?? '').trim() === lineItemRef) ||
+      wi20Rows[index]
+
+    // Adhunik: Product must come from Category_1_MM_Database_WMW_2_0 (2.0) Blend_Category only.
+    const blendCategory = firstField([item], 'Blend_Category')
+    const endType = firstField([ext3, item, productDetail], 'End_Type')
+    const materialCode =
+      firstField([wi20Line], 'Material_Code') || firstField([wi20Line], 'Material')
+    /** Same precedence as `resolveCategory1WmwHsnCode`: WMW 2_0 → WMW 3_0 → main WMW row */
+    const hsnCode = firstField([item, ext3, productDetail], 'HSN_Code')
+
+    const parseDimNumber = (value: unknown): number => {
+      const s = String(value ?? '').trim()
+      if (!s) return 0
+      const match = s.match(/(\d+(\.\d+)?)/)
+      const n = match ? parseFloat(match[1]) : NaN
+      return Number.isFinite(n) ? n : 0
+    }
+
     let size = ''
-    if (item.Invoice_Dimension_1 && item.Invoice_Dimension_2) {
+    // Size (Mtrs) — prefer Category_1_MM_Database_WMW.Length_field + Width (per requirement).
+    // Fallback to Invoice_Dimension_1/2 from line items if length/width are missing.
+    const len = String(productDetail.Length_field ?? '').trim()
+    const wid = String(productDetail.Width ?? '').trim()
+    if (len && wid) {
+      size = `${len} x ${wid}`
+    } else if (item.Invoice_Dimension_1 && item.Invoice_Dimension_2) {
       const extractNumber = (str: string) => {
         const match = str.match(/(\d+\.?\d*)/)
         return match ? match[1] : str.replace(/Length|length|Width|width/gi, '').trim()
@@ -107,26 +262,55 @@ export default function AdhunikGoodsTable({ data, rawQuotationData, shippingData
       size = `${dim1} x ${dim2}`
     }
 
-    const sqmArea = productDetail.Total_SQM?.trim() || productDetail.SQM?.trim() || ''
+    const lenNum = parseDimNumber(productDetail.Length_field)
+    const widNum = parseDimNumber(productDetail.Width)
+    const computedSqmArea = lenNum > 0 && widNum > 0 ? (lenNum * widNum) : 0
+    const sqmArea =
+      computedSqmArea > 0
+        ? computedSqmArea.toFixed(4)
+        : (productDetail.Total_SQM?.trim() || productDetail.SQM?.trim() || '')
     const quantity = parseFloat(productDetail.Qty?.trim() || item.Qty?.trim() || '0')
     const rate = parseFloat(String(productDetail.List_Price || '').replace(/,/g, '') || item.Selling_Price?.replace(/,/g, '') || '0')
-    const amount = parseFloat(item.Net_Selling_Amount?.replace(/,/g, '') || item.Gross_Amount?.replace(/,/g, '') || '0')
+    const totalPriceRaw = productDetail.Total_Price
+    const totalPriceParsed =
+      totalPriceRaw !== undefined && totalPriceRaw !== null && String(totalPriceRaw).trim() !== ''
+        ? parseFloat(String(totalPriceRaw).replace(/,/g, ''))
+        : NaN
+    const amountFromLine = parseFloat(item.Net_Selling_Amount?.replace(/,/g, '') || item.Gross_Amount?.replace(/,/g, '') || '0')
+    const amount = Number.isFinite(totalPriceParsed) ? totalPriceParsed : amountFromLine
 
-    const mesh = productDetail.Brand_Category?.trim() || ''
+    const cat2WmwMainRows = toRowArray((rawQuotationData as any)?.Category_2_MM_Database_WMW)
+    const cat2ProductDetail = itemRef
+      ? cat2WmwMainRows.find(
+          (pd: any) => pd.last_item_ref?.trim() === itemRef || pd.Last_item_ref?.trim() === itemRef
+        ) || cat2WmwMainRows[index] || {}
+      : cat2WmwMainRows[index] || {}
+
+    const fitmentRows = toRowArray((rawQuotationData as any)?.Product_Fitments2_0)
+    const fitmentRow =
+      fitmentRows.find((x: any) => String(x?.S_No ?? '').trim() === String(index + 1)) || fitmentRows[index]
+
+    const productCodeForMesh = firstField([productDetail, cat2ProductDetail, fitmentRow], 'Product_Code')
+    const mesh = meshInchFromProductCode(productCodeForMesh)
     const brand = productDetail.Brand_Selling_Name?.trim() || ''
 
     const wiLine = data.lineItems?.[index]
-    const product =
-      productDetail.Product_Name?.trim() ||
-      productDetail.Product_Master?.trim() ||
-      wiLine?.product?.trim() ||
-      defaultProductLabel
-    const form = productDetail.Supply_Form?.trim() || wiLine?.form?.trim() || ''
-    const quality = wiLine?.quality?.trim() || ''
-    
-    // Dummy Net Weight fallback
-    const dummyPerPc = index === 0 ? 23.0 : 22.0
-    const perPc = parseFloat(productDetail.Net_Weight_Per_Pcs || dummyPerPc)
+    /** Product row: Adhunik requires Blend_Category only; if missing, keep it blank. */
+    const product = blendCategory || ''
+    /** Form row: End_Type from subform join; then Supply_Form / transformed line. */
+    const form = endType || productDetail.Supply_Form?.trim() || wiLine?.form?.trim() || ''
+    /** Quality: keep "AISI" constant; append Material code when present. */
+    const quality = materialCode ? `AISI ${materialCode}` : 'AISI'
+
+    // Net Weight (Kg.) Per Pc. mapping:
+    // Category 1 → Category_1_MM_Database_WMW_3_0.Net_Weight
+    // Category 2 → Category_2_MM_Database_WI_3_0.Net_Weight
+    // Else (no category signal) → Product_Fitments2_0.Net_Weight
+    const perPcFromCategory = pickNetWeightPerPc(itemRef, index)
+    const perPc =
+      perPcFromCategory > 0
+        ? perPcFromCategory
+        : pickFitmentNetWeightPerPc(index)
     const totalWeight = perPc * quantity
 
     return {
@@ -134,6 +318,7 @@ export default function AdhunikGoodsTable({ data, rawQuotationData, shippingData
       product,
       form,
       quality,
+      hsnCode,
       mesh,
       brand,
       size,
@@ -150,15 +335,16 @@ export default function AdhunikGoodsTable({ data, rawQuotationData, shippingData
     const rate = parseFloat(String(item.rate).replace(/,/g, '')) || 0
     const amount = parseFloat(String(item.amount).replace(/,/g, '')) || 0
     const quantity = parseFloat(String(item.qty).replace(/,/g, '')) || 0
-    
-    const dummyPerPc = index === 0 ? 23.0 : 22.0
-    const totalWeight = dummyPerPc * quantity
+
+    const perPc = pickFitmentNetWeightPerPc(index)
+    const totalWeight = perPc * quantity
     
     return {
       item: index + 1,
-      product: item.product?.trim() || defaultProductLabel,
+      product: '',
       form: item.form?.trim() || '',
       quality: item.quality?.trim() || '',
+      hsnCode: item.hsnCode?.trim() || '',
       mesh: '',
       brand: item.type || item.form || '',
       size: item.size || '',
@@ -166,7 +352,7 @@ export default function AdhunikGoodsTable({ data, rawQuotationData, shippingData
       quantity,
       rate,
       amount,
-      perPc: dummyPerPc,
+      perPc,
       totalWeight,
     }
   })
@@ -176,8 +362,8 @@ export default function AdhunikGoodsTable({ data, rawQuotationData, shippingData
   // If we only have 0 items and want to match screenshot exactly, inject dummy data
   if (displayLineItems.length === 0) {
     displayLineItems = [
-      { item: 1, product: 'Stainless Steel Wire Cloth', form: 'Endless Diagonal Seam', quality: 'AISI 316L', mesh: '40/ Inch', brand: 'Formx-040', size: '4.728 x 3.020', sqmArea: '14.2786', quantity: 6, rate: 1070, amount: 6420, perPc: 23.0, totalWeight: 138.0 },
-      { item: 2, product: 'Stainless Steel Wire Cloth', form: 'Endless Diagonal Seam', quality: 'AISI 316L', mesh: '40/ Inch', brand: 'Formx-040', size: '4.720 x 3.020', sqmArea: '14.2544', quantity: 3, rate: 1065, amount: 3195, perPc: 22.0, totalWeight: 66.0 }
+      { item: 1, product: '', form: 'Endless Diagonal Seam', quality: 'AISI 316L', hsnCode: '7314', mesh: '40/ Inch', brand: 'Formx-040', size: '4.728 x 3.020', sqmArea: '14.2786', quantity: 6, rate: 1070, amount: 6420, perPc: 23.0, totalWeight: 138.0 },
+      { item: 2, product: '', form: 'Endless Diagonal Seam', quality: 'AISI 316L', hsnCode: '7314', mesh: '40/ Inch', brand: 'Formx-040', size: '4.720 x 3.020', sqmArea: '14.2544', quantity: 3, rate: 1065, amount: 3195, perPc: 22.0, totalWeight: 66.0 }
     ]
   }
 
@@ -192,8 +378,16 @@ export default function AdhunikGoodsTable({ data, rawQuotationData, shippingData
           ? lineSum
           : data.totalAmount
 
-  const totalWithCharges = baseAmount + packingFreight + transaction
-  const amountInWords = numberToWords(totalWithCharges)
+  const totalWithCharges = baseAmount + chargesSum + transaction
+  const overallGrandRaw = rawQuotationData?.Overall_Grand_Total_incl_Accessories
+  const overallGrandParsed =
+    overallGrandRaw !== undefined &&
+    overallGrandRaw !== null &&
+    String(overallGrandRaw).trim() !== ''
+      ? parseFloat(String(overallGrandRaw).replace(/,/g, ''))
+      : NaN
+  const displayGrandTotal = Number.isFinite(overallGrandParsed) ? overallGrandParsed : totalWithCharges
+  const amountInWords = numberToWords(displayGrandTotal)
   const currencyWords = currency === 'USD' ? 'US Dollars' : currency === 'INR' ? 'Indian Rupees' : currency
 
   const chunks = [];
@@ -228,18 +422,22 @@ export default function AdhunikGoodsTable({ data, rawQuotationData, shippingData
                 }}
               >
                 <colgroup>
-                  <col style={{ width: '17%' }} />
-                  <col style={{ width: '29%' }} />
+                  <col style={{ width: '20%' }} />
+                  <col style={{ width: '30%' }} />
+                  <col style={{ width: '6%' }} />
+                  <col style={{ width: '8%' }} />
+                  <col style={{ width: '8%' }} />
+                  <col style={{ width: '8%' }} />
                   <col style={{ width: '10%' }} />
                   <col style={{ width: '10%' }} />
-                  <col style={{ width: '11%' }} />
-                  <col style={{ width: '11%' }} />
-                  <col style={{ width: '12%' }} />
                 </colgroup>
                 <tbody>
                   <tr className="adhunik-goods-title-row">
                     <td colSpan={2} rowSpan={2} style={{ ...bdTitleRow, padding: '6px', textAlign: 'center', fontWeight: 'bold', fontSize: '11px', verticalAlign: 'middle' }}>
                       Description of Goods
+                    </td>
+                    <td rowSpan={2} style={{ ...bdTitleRow, padding: '6px', textAlign: 'center', fontWeight: 'bold', fontSize: '10px', verticalAlign: 'middle' }}>
+                      HSN Code
                     </td>
                     <td colSpan={2} style={{ ...bdTitleRow, padding: '6px', textAlign: 'center', fontWeight: 'bold', fontSize: '10px' }}>
                       Net Weight (Kg.)
@@ -267,20 +465,19 @@ export default function AdhunikGoodsTable({ data, rawQuotationData, shippingData
                     <Fragment key={`adhunik-line-${pageIdx}-${index}`}>
                       <tr className="adhunik-item-meta-row">
                         <td colSpan={2} style={{ ...bdProductMeta, padding: '8px 10px 4px 10px', verticalAlign: 'top' }}>
-                          <div style={{ display: 'grid', gridTemplateColumns: '60px 10px auto', marginBottom: '3px', fontWeight: 'bold' }}>
-                            <span>Product</span><span>:</span><span>{row.product}</span>
+                          <div style={metaRowLine}>
+                            <span>Product</span><span>:</span><span style={metaRowValue}>{row.product}</span>
                           </div>
                           {row.form ? (
-                            <div style={{ display: 'grid', gridTemplateColumns: '60px 10px auto', marginBottom: '3px', fontWeight: 'bold' }}>
-                              <span>Form</span><span>:</span><span>{row.form}</span>
+                            <div style={metaRowLine}>
+                              <span>Form</span><span>:</span><span style={metaRowValue}>{row.form}</span>
                             </div>
                           ) : null}
-                          {row.quality ? (
-                            <div style={{ display: 'grid', gridTemplateColumns: '60px 10px auto', fontWeight: 'bold' }}>
-                              <span>Quality</span><span>:</span><span>{row.quality}</span>
-                            </div>
-                          ) : null}
+                          <div style={{ ...metaRowLine, marginBottom: 0 }}>
+                            <span>Quality</span><span>:</span><span style={metaRowValue}>{row.quality}</span>
+                          </div>
                         </td>
+                        <td style={{ ...bdProductMeta, padding: '6px 4px', verticalAlign: 'top' }} />
                         <td style={rightMergedEmpty} />
                         <td style={rightMergedEmpty} />
                         <td style={rightMergedEmpty} />
@@ -297,12 +494,15 @@ export default function AdhunikGoodsTable({ data, rawQuotationData, shippingData
                             <span>Sqm Area / PC</span>
                           </div>
                           <div style={descGrid}>
-                            <span style={{ fontWeight: 'bold', textDecoration: 'underline' }}>{row.item}</span>
-                            <span>{row.mesh}</span>
-                            <span>{row.brand}</span>
-                            <span>{row.size}</span>
-                            <span>{row.sqmArea}</span>
+                            <span style={{ fontWeight: 'bold', textDecoration: 'underline', whiteSpace: 'nowrap' }}>{row.item}</span>
+                            <span style={{ whiteSpace: 'nowrap' }}>{row.mesh}</span>
+                            <span style={{ whiteSpace: 'nowrap' }}>{row.brand}</span>
+                            <span style={{ whiteSpace: 'nowrap' }}>{row.size}</span>
+                            <span style={{ whiteSpace: 'nowrap' }}>{row.sqmArea}</span>
                           </div>
+                        </td>
+                        <td style={{ ...bdItemGrid, padding: '6px 4px', textAlign: 'center', verticalAlign: 'middle', fontWeight: 'bold', wordBreak: 'break-word' }}>
+                          {row.hsnCode || ''}
                         </td>
                         <td style={{ ...bdItemGrid, padding: '6px', textAlign: 'right', verticalAlign: 'middle' }}>
                           {row.perPc?.toFixed(1) || ''}
@@ -335,44 +535,50 @@ export default function AdhunikGoodsTable({ data, rawQuotationData, shippingData
                         <td style={{ ...bdSides, borderTop: 'none', borderBottom: 'none', padding: '16px 0', lineHeight: 0, fontSize: 0 }} />
                         <td style={{ ...bdSides, borderTop: 'none', borderBottom: 'none', padding: '16px 0', lineHeight: 0, fontSize: 0 }} />
                         <td style={{ ...bdSides, borderTop: 'none', borderBottom: 'none', padding: '16px 0', lineHeight: 0, fontSize: 0 }} />
+                        <td style={{ ...bdSides, borderTop: 'none', borderBottom: 'none', padding: '16px 0', lineHeight: 0, fontSize: 0 }} />
                       </tr>
 
-                      <tr>
-                        <td colSpan={2} style={{ ...bdSides, padding: '6px 10px', verticalAlign: 'top' }}>
-                          Packing &amp; Freight charges upto {destLabel} by {transportMethod}
-                        </td>
-                        <td style={{ ...bdSides, padding: '6px' }} />
-                        <td style={{ ...bdSides, padding: '6px' }} />
-                        <td style={{ ...bdSides, padding: '6px' }} />
-                        <td style={{ ...bdSides, padding: '6px' }} />
-                        <td style={{ ...bdSides, padding: '6px', textAlign: 'right' }}>
-                          {formatCurrency(packingFreight, '')}
-                        </td>
-                      </tr>
+                      {adhunikChargeRows.map(([chargeLabel, chargeAmt], chargeIdx) => (
+                        <tr key={`adhunik-charge-${chargeIdx}`}>
+                          <td colSpan={2} style={{ ...bdSides, padding: '6px 10px', verticalAlign: 'top' }}>
+                            {chargeLabel}
+                          </td>
+                          <td style={{ ...bdSides, padding: '6px' }} />
+                          <td style={{ ...bdSides, padding: '6px' }} />
+                          <td style={{ ...bdSides, padding: '6px' }} />
+                          <td style={{ ...bdSides, padding: '6px' }} />
+                          <td style={{ ...bdSides, padding: '6px' }} />
+                          <td style={{ ...bdSides, padding: '6px', textAlign: 'right' }}>
+                            {formatCurrency(chargeAmt, '')}
+                          </td>
+                        </tr>
+                      ))}
 
                       <tr>
                         <td colSpan={2} style={{ ...bdSides, padding: '12px 10px 4px 10px', verticalAlign: 'top', fontWeight: 'bold' }}>
-                          Gross Weight (kg.) : {rawQuotationData?.Total_Gross_Weight || '460'} Kg. approx
+                          Gross Weight (kg.) :{' '}
+                          {grossWeight ? `${grossWeight} Kg. approx` : ''}
                         </td>
                         <td style={{ ...bdSides, padding: '6px' }} />
                         <td style={{ ...bdSides, padding: '6px' }} />
                         <td style={{ ...bdSides, padding: '6px' }} />
                         <td style={{ ...bdSides, padding: '6px' }} />
                         <td style={{ ...bdSides, padding: '6px' }} />
+                        <td style={{ ...bdSides, padding: '6px' }} />
                       </tr>
 
                       <tr>
-                        <td colSpan={7} style={{ ...bd, padding: '4px 10px', textAlign: 'center', fontWeight: 'bold' }}>Transport</td>
+                        <td colSpan={8} style={{ ...bd, padding: '4px 10px', textAlign: 'center', fontWeight: 'bold' }}>Transport</td>
                       </tr>
 
                       <tr>
-                        <td colSpan={7} style={{ ...bd, padding: '4px 10px', textAlign: 'center', fontWeight: 'bold' }}>
+                        <td colSpan={8} style={{ ...bd, padding: '4px 10px', textAlign: 'center', fontWeight: 'bold' }}>
                           Total CPT Price upto {destLabel} By {transportMethod}
                         </td>
                       </tr>
 
                       <tr>
-                        <td colSpan={5} style={{ ...bd, padding: '6px 10px', fontSize: '9px', verticalAlign: 'top' }}>
+                        <td colSpan={6} style={{ ...bd, padding: '6px 10px', fontSize: '9px', verticalAlign: 'top' }}>
                           <span>
                             Note : If the total order value is less than {currencySymbol} 2500, transaction fee of {currencySymbol} 100 per invoice
                             shall be charged extra
@@ -382,7 +588,7 @@ export default function AdhunikGoodsTable({ data, rawQuotationData, shippingData
                           <span>{currency}</span>
                         </td>
                         <td style={{ ...bd, padding: '6px', textAlign: 'right', fontWeight: 'bold', verticalAlign: 'middle', width: '12%' }}>
-                          <span>{formatCurrency(totalWithCharges, '')}</span>
+                          <span>{formatCurrency(displayGrandTotal, '')}</span>
                         </td>
                       </tr>
 
@@ -390,14 +596,14 @@ export default function AdhunikGoodsTable({ data, rawQuotationData, shippingData
                         <td style={{ ...bd, padding: '4px 8px', fontSize: '10px', verticalAlign: 'top', width: '17%' }}>
                           <span style={{ fontWeight: 'bold', display: 'block', lineHeight: 1.2 }}>Amount Chargeable<br />(In words) :</span>
                         </td>
-                        <td colSpan={4} style={{ ...bd, padding: '4px 8px', fontWeight: 'bold', verticalAlign: 'middle', fontSize: '11px', width: '60%' }}>
+                        <td colSpan={5} style={{ ...bd, padding: '4px 8px', fontWeight: 'bold', verticalAlign: 'middle', fontSize: '11px', width: '60%' }}>
                           {currencyWords} {amountInWords} Only
                         </td>
                         <td style={{ ...bd, padding: '4px 8px', textAlign: 'right', verticalAlign: 'middle', fontWeight: 'bold', fontSize: '11px', width: '11%' }}>
                           Total:-
                         </td>
                         <td style={{ ...bd, padding: '4px 8px', textAlign: 'right', verticalAlign: 'middle', fontWeight: 'bold', fontSize: '11px', width: '12%' }}>
-                          {formatCurrency(totalWithCharges, '')}
+                          {formatCurrency(displayGrandTotal, '')}
                         </td>
                       </tr>
                     </>

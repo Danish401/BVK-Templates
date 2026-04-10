@@ -6,6 +6,13 @@ export interface ZohoLineItem {
   ID: string
   Line_Item_ref?: string
   last_item_ref?: string
+  Blend_Category?: string
+  End_Type?: string
+  Material_Code?: string
+  Material?: string
+  /** WMW 3.0 linked row (Seamp / export layouts) */
+  delivery?: string
+  Delivery?: string
   Discount?: string
   Discount1?: string
   UOM_Billing?: string
@@ -48,6 +55,8 @@ export interface ZohoQuotation {
   Delivery_Date_Control?: string
   Delivery_Terms?: string
   Term_of_Payment?: string
+  /** Bank / payment instructions shown under Terms of Payment when mapped in templates */
+  Our_Bank_Details?: string
   Follow_up_Date?: string
   Due_Date?: string
   Sales_Required_Date?: string
@@ -136,6 +145,9 @@ export interface ZohoQuotation {
     Product_Status?: string
     Length_field?: string
     Width?: string
+    /** Shown as “AISI {code}” on Adhunik export quotation when set */
+    Material_Code?: string
+    Material?: string
     Pieces?: string
     Qty?: string
     SQM?: string
@@ -188,6 +200,8 @@ export interface ZohoQuotation {
     [key: string]: any
   }>
   Category_2_MM_Database_WI_2_0?: ZohoLineItem[]
+  /** Second line-items subform for Category 2 WI (merged with WI_2_0 for display) */
+  Category_2_MM_Database_WI_3_0?: ZohoLineItem[]
   Category_2_MM_Database_WI?: Array<{
     ID: string
     Product_Group?: string
@@ -208,8 +222,14 @@ export interface ZohoQuotation {
     Status?: string
     Product_Status?: string
     Line_Item_ref?: string
+    Last_item_ref?: string
+    last_item_ref?: string
     [key: string]: any
   }>
+  /** Product fitments (legacy / alternate subform name) */
+  Product_Fitments?: Array<Record<string, unknown>>
+  /** Product fitments line items (2.0 subform) */
+  Product_Fitments2_0?: Array<Record<string, unknown>>
   Total_Net_Sale_Value_Before_Tax?: string
   Total_CGST?: string
   Total_SGST?: string
@@ -221,10 +241,21 @@ export interface ZohoQuotation {
   Total_Freight_Charges?: string
   Total_Packing_Charges?: string
   Total_Seam_Charges?: string
+  Other_Charges?: string
+  Type_of_Other_Charges?: string
+  /** Everite — multiline body under “Performance warranty” (Zoho API spelling) */
+  Performance_Warrenty?: string
+  /** Everite — multiline body under “Payment Schedule” */
+  Payment_Schedule?: string
+  /** Primary gross weight field (Zoho API name) */
+  Gross_Weight?: string
+  Total_Gross_Weight?: string
+  Total_Net_Weight?: string
+  Net_Weight_Per_Pcs?: string
   [key: string]: any
 }
 
-export type TemplateType = 'WI' | 'WMW' | 'WMW2' | 'EXPORT' | 'SLS' | 'GKD' | 'BVK'
+export type TemplateType = 'WI' | 'WMW' | 'WMW2' | 'EXPORT' | 'WMWE1' | 'SLS' | 'GKD' | 'BVK'
 
 export interface ShippingMaster {
   ID: string
@@ -283,7 +314,12 @@ export interface QuotationLineItem {
   type: string
   /** Category_1_MM_Database_WMW_3_0 HSN_Code (WI / WMW join) */
   hsnCode?: string
-  delivery: string
+  /** Optional; Seamp fallback from transformed data */
+  delivery?: string
+  /** BVK Hydrotech — mesh from Product_Code (e.g. N/Inch) */
+  mesh?: string
+  /** BVK — weave / seam from product subform */
+  weave?: string
   uom: string
   qty: string
   subQty: string

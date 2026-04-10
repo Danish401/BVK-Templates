@@ -2,6 +2,9 @@
 
 import Link from 'next/link'
 import type { QuotationData } from '@/lib/types'
+import { resolveConsigneeDisplay, resolveConsigneePhone } from '@/lib/consignee-display'
+import { quotationRichText } from '@/lib/quotation-rich-text'
+import { resolveQuotationValidity } from '@/lib/quotation-utils'
 import Quotation3GoodsTable from './Quotation3GoodsTable'
 
 interface Quotation3InvoiceContentProps {
@@ -30,11 +33,8 @@ export default function Quotation3InvoiceContent({
     </>
   );
 
-  const consigneeName = shippingData?.Shipping_Address_Name || rawQuotationData?.Shipping_Address_Name || 'NOV Wellbore Technologies';
-  const consigneeAddress = shippingData?.Shipping_Street || rawQuotationData?.Shipping_Street || '2800 N. Frazier Street Conroe,';
-  const consigneeCity = shippingData?.Shipping_City || rawQuotationData?.Shipping_City || 'Texas 77303';
-  const consigneeCountry = shippingData?.Shipping_Country || rawQuotationData?.Shipping_Country || 'USA';
-  const consigneePhone = shippingData?.Phone || rawQuotationData?.Phone || '936.523.2712 & 281.728.6902';
+  const consignee = resolveConsigneeDisplay(shippingData, rawQuotationData)
+  const consigneePhone = resolveConsigneePhone(shippingData, rawQuotationData)
 
   const countryOfOrigin = rawQuotationData?.Billing_Country || 'India';
   const countryOfDestination = rawQuotationData?.Shipping_Country || shippingData?.Shipping_Country || 'USA';
@@ -46,6 +46,7 @@ export default function Quotation3InvoiceContent({
   const finalDestination = rawQuotationData?.Final_Destination || 'USA';
   
   const dispatchExWorks = rawQuotationData?.Delivery_Date_Control || data.deliveryDate || '1st 1000 panels each type -  14-15 weeks from date of PO and advance.Then on, as per schedule ( 1000 panels each type, every 2 months).';
+  const ourBankDetails = quotationRichText(rawQuotationData, 'Our_Bank_Details')
 
   return (
     <>
@@ -128,11 +129,12 @@ export default function Quotation3InvoiceContent({
                 <tr>
                   <td style={{ width: '53%', verticalAlign: 'top', border: '1px solid #000', padding: '8px' }}>
                     <div style={{ fontWeight: 'bold', fontSize: '12px', marginBottom: '4px' }}>Consignee</div>
-                    <div style={{ fontWeight: 'bold', fontSize: '14px', marginBottom: '4px' }}>{consigneeName}</div>
-                    <div style={{ fontSize: '12px', lineHeight: 1.3 }}>{consigneeAddress}</div>
-                    <div style={{ fontSize: '12px', lineHeight: 1.3 }}>{consigneeCity}</div>
-                    <div style={{ fontSize: '12px', lineHeight: 1.3 }}>{consigneeCountry}</div>
-                    <div style={{ fontSize: '12px', marginTop: '6px' }}>Phone: {consigneePhone}</div>
+                    <div style={{ fontWeight: 'bold', fontSize: '14px', marginBottom: '4px' }}>{consignee.name}</div>
+                    <div style={{ fontSize: '12px', lineHeight: 1.3, whiteSpace: 'pre-wrap' }}>{consignee.addressBlock}</div>
+                    <div style={{ fontSize: '12px', lineHeight: 1.3 }}>{consignee.country}</div>
+                    {consigneePhone ? (
+                      <div style={{ fontSize: '12px', marginTop: '6px' }}>Phone: {consigneePhone}</div>
+                    ) : null}
                   </td>
                   <td style={{ width: '47%', verticalAlign: 'top', border: '1px solid #000', padding: 0 }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', height: '100%' }}>
@@ -151,6 +153,19 @@ export default function Quotation3InvoiceContent({
                           <td colSpan={2} style={{ border: '1px solid #000', padding: '4px 6px', verticalAlign: 'top', height: '100%' }}>
                             <div style={{ fontWeight: 'bold', textDecoration: 'underline', marginBottom: '4px', color: '#555' }}>Terms of Payment</div>
                             <div>{termsOfPayment}</div>
+                            {ourBankDetails ? (
+                              <div
+                                style={{
+                                  marginTop: '8px',
+                                  fontWeight: 'normal',
+                                  fontSize: '10px',
+                                  lineHeight: 1.35,
+                                  whiteSpace: 'pre-wrap',
+                                }}
+                              >
+                                {ourBankDetails}
+                              </div>
+                            ) : null}
                           </td>
                         </tr>
                       </tbody>
@@ -211,7 +226,7 @@ export default function Quotation3InvoiceContent({
                             HS Code: {rawQuotationData?.HS_Code || '73141200'}
                           </td>
                           <td style={{ width: '40%', border: '1px solid #000', padding: '4px 6px' }}>
-                            Offer Validity : {rawQuotationData?.Offer_Validity || '7 Days'}
+                            Offer Validity : {resolveQuotationValidity(rawQuotationData as Record<string, unknown> | undefined)}
                           </td>
                         </tr>
                         <tr>

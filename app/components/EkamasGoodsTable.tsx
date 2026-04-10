@@ -3,7 +3,7 @@
 import { Fragment } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import type { QuotationData } from '@/lib/types'
-import { formatCurrency, numberToWords } from '@/lib/quotation-utils'
+import { formatCurrency, numberToWords, resolveQuotationValidity } from '@/lib/quotation-utils'
 
 const bd: CSSProperties = { border: '1px solid #000' }
 
@@ -224,7 +224,7 @@ export default function EkamasGoodsTable({
   const amountInWords = numberToWords(totalWithCharges)
   const currencyWords = currency === 'USD' ? 'US Dollars' : currency === 'INR' ? 'Indian Rupees' : currency
 
-  const offerValidity = String(rawQuotationData?.Offer_Validity || '3 Months')
+  const offerValidity = resolveQuotationValidity(rawQuotationData as Record<string, unknown> | undefined, '3 Months')
 
   const chunks: EkamasDisplayRow[][] = []
   for (let i = 0; i < displayLineItems.length; i += 5) {

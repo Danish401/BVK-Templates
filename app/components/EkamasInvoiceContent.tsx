@@ -3,6 +3,8 @@
 import Link from 'next/link'
 import type { CSSProperties } from 'react'
 import type { QuotationData } from '@/lib/types'
+import { resolveConsigneeDisplay, resolveConsigneePhone } from '@/lib/consignee-display'
+import { quotationRichText } from '@/lib/quotation-rich-text'
 import EkamasGoodsTable from './EkamasGoodsTable'
 
 interface EkamasInvoiceContentProps {
@@ -28,21 +30,8 @@ export default function EkamasInvoiceContent({
     data.customerReferenceDate || (rawQuotationData?.Customer_Reference_Date as string) || ''
   const otherReference = (rawQuotationData?.Additional_info as string) || ''
 
-  const consigneeName =
-    (shippingData?.Shipping_Address_Name as string) ||
-    (rawQuotationData?.Shipping_Address_Name as string) ||
-    'PT. EKAMAS FORTUNA'
-
-  const street = (shippingData?.Shipping_Street as string) || (rawQuotationData?.Shipping_Street as string) || ''
-  const defaultAddress =
-    'Gampingan, Pagak, Kanigoro, Gampingan, Pagak, Malang, Jawa Timur 65168, Indonesia'
-  const consigneeAddress = street || defaultAddress
-
-  const consigneePhone =
-    (shippingData?.Shipping_Phone as string) ||
-    (rawQuotationData?.Phone as string) ||
-    (rawQuotationData?.Mobile as string) ||
-    '+62 341 311901'
+  const consignee = resolveConsigneeDisplay(shippingData, rawQuotationData)
+  const consigneePhone = resolveConsigneePhone(shippingData, rawQuotationData)
 
   const countryOfOrigin = (rawQuotationData?.Billing_Country as string) || 'India'
   const countryOfDestination =
@@ -62,6 +51,7 @@ export default function EkamasInvoiceContent({
 
   const termsOfPayment =
     data.termsOfPayment || (rawQuotationData?.Term_of_Payment as string) || '30 days from the date of Invoice'
+  const ourBankDetails = quotationRichText(rawQuotationData, 'Our_Bank_Details')
 
   const signatureDate = quotationDate || data.date || ''
 
@@ -158,9 +148,14 @@ export default function EkamasInvoiceContent({
                 <tr>
                   <td style={{ width: '50%', verticalAlign: 'top', ...cellBorder, padding: '8px' }}>
                     <div style={{ fontWeight: 'bold', fontSize: '11px', marginBottom: '6px' }}>Consignee</div>
-                    <div style={{ fontWeight: 'bold', fontSize: '13px', marginBottom: '4px' }}>{consigneeName}</div>
-                    <div style={{ fontSize: '11px', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>{consigneeAddress}</div>
-                    <div style={{ fontSize: '11px', marginTop: '8px' }}>Phone: {consigneePhone}</div>
+                    <div style={{ fontWeight: 'bold', fontSize: '13px', marginBottom: '4px' }}>{consignee.name}</div>
+                    <div style={{ fontSize: '11px', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>{consignee.addressBlock}</div>
+                    {consignee.country ? (
+                      <div style={{ fontWeight: 'bold', fontSize: '11px', marginTop: '4px' }}>{consignee.country}</div>
+                    ) : null}
+                    {consigneePhone ? (
+                      <div style={{ fontSize: '11px', marginTop: '8px' }}>Phone: {consigneePhone}</div>
+                    ) : null}
                   </td>
                   <td style={{ width: '50%', verticalAlign: 'top', ...cellBorder, padding: 0 }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
@@ -179,6 +174,19 @@ export default function EkamasInvoiceContent({
                           <td colSpan={2} style={{ ...cellBorder, padding: '4px 8px 8px 8px', verticalAlign: 'top' }}>
                             <div style={{ fontWeight: 'bold', textDecoration: 'underline', marginBottom: '4px' }}>Terms of Payment</div>
                             <div>{termsOfPayment}</div>
+                            {ourBankDetails ? (
+                              <div
+                                style={{
+                                  marginTop: '8px',
+                                  fontWeight: 'normal',
+                                  fontSize: '10px',
+                                  lineHeight: 1.35,
+                                  whiteSpace: 'pre-wrap',
+                                }}
+                              >
+                                {ourBankDetails}
+                              </div>
+                            ) : null}
                           </td>
                         </tr>
                       </tbody>

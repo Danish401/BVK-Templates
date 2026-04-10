@@ -89,6 +89,7 @@ export default function QuotationContent({ data, shippingData, billingData, rawQ
                   wmwPackingChargeTotal={packingTotal}
                   wmwSeamChargeTotal={seamTotal}
                   sevenColumnGoodsLayout
+                  rawQuotationData={rawQuotationData as Record<string, unknown> | null | undefined}
                 />
 
                 <div className="quotation-master-footer print-footer">

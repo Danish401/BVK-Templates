@@ -380,31 +380,39 @@ export function sumWmwOtherChargesByCategory(raw: ZohoQuotation | null | undefin
   return { freightTotal, packingTotal, seamTotal }
 }
 
-function totalChargeFieldPresent(value: unknown): boolean {
+/** True when Zoho sent a non-empty scalar (trimmed). Used so missing charge fields do not fall back to subform sums. */
+export function quotationScalarFieldPresent(value: unknown): boolean {
   return value !== undefined && value !== null && String(value).trim() !== ''
 }
 
 /**
- * Freight / packing / seam for WI summary: Creator rollups Total_* when set, else sum of WMW other-charges lines.
+ * Freight / packing / seam from quotation scalars only: `Total_Freight_Charges`, `Total_Packing_Charges`, `Total_Seam_Charges`.
+ * No subform sum and no `Packing_Freight` fallback — empty/missing field → 0 (UI hides the row).
  */
 export function resolveWmwChargeTotals(raw: ZohoQuotation | null | undefined): {
   freightTotal: number
   packingTotal: number
   seamTotal: number
 } {
-  const summed = sumWmwOtherChargesByCategory(raw)
   const r = raw as Record<string, unknown> | undefined
-  if (!r) return summed
+  if (!r) {
+    return { freightTotal: 0, packingTotal: 0, seamTotal: 0 }
+  }
 
   return {
-    freightTotal: totalChargeFieldPresent(r.Total_Freight_Charges)
+    freightTotal: quotationScalarFieldPresent(r.Total_Freight_Charges)
       ? parseChargeNumber(String(r.Total_Freight_Charges))
-      : summed.freightTotal,
-    packingTotal: totalChargeFieldPresent(r.Total_Packing_Charges)
+      : 0,
+    packingTotal: quotationScalarFieldPresent(r.Total_Packing_Charges)
       ? parseChargeNumber(String(r.Total_Packing_Charges))
-      : summed.packingTotal,
-    seamTotal: totalChargeFieldPresent(r.Total_Seam_Charges)
+      : 0,
+    seamTotal: quotationScalarFieldPresent(r.Total_Seam_Charges)
       ? parseChargeNumber(String(r.Total_Seam_Charges))
-      : summed.seamTotal,
+      : 0,
   }
+}
+
+/** Hide charge rows when amount is zero (missing / empty API). */
+export function filterNonZeroWmwChargeRows(rows: readonly [string, number][]): [string, number][] {
+  return rows.filter(([, amt]) => typeof amt === 'number' && Number.isFinite(amt) && amt !== 0)
 }

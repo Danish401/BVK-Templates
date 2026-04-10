@@ -130,9 +130,6 @@ function getAddrText(data: any, kind: 'shipping' | 'billing') {
   return (
     <div className="quotation-address-plain">
       {name && <div className="quotation-address-plain__line quotation-address-plain__line--bold">{name}</div>}
-      {data.Parent_Account && (
-        <div className="quotation-address-plain__line quotation-address-plain__line--bold">{data.Parent_Account}</div>
-      )}
       {street && <div className="quotation-address-plain__line">{street}</div>}
       {(city || state || postal) && (
         <div className="quotation-address-plain__line">

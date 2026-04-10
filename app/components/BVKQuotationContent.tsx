@@ -1,7 +1,9 @@
 'use client'
 
 import { QuotationData } from '@/lib/types'
-import { formatCurrency, formatDate } from '@/lib/quotation-utils'
+import { resolveConsigneeDisplay } from '@/lib/consignee-display'
+import { formatCurrency, resolveQuotationValidity } from '@/lib/quotation-utils'
+import { buildBvkQuotationTableRows } from '@/lib/wi-line-display-shared'
 import PrintButton from './PrintButton'
 
 interface BVKQuotationContentProps {
@@ -9,6 +11,13 @@ interface BVKQuotationContentProps {
   shippingData?: any
   billingData?: any
   rawQuotationData?: any
+}
+
+/** BVK tab: show mesh count with `/Inch` suffix when a value exists. */
+function bvkMeshCellValue(meshDisplay?: string): string {
+  const m = meshDisplay?.trim() ?? ''
+  if (!m) return '---------'
+  return m.endsWith('/Inch') ? m : `${m}/Inch`
 }
 
 export default function BVKQuotationContent({ data, shippingData, billingData, rawQuotationData }: BVKQuotationContentProps) {
@@ -49,19 +58,31 @@ export default function BVKQuotationContent({ data, shippingData, billingData, r
   const quotationDate = formatBVKDate(data.date || rawQuotationData?.Created_Date_and_time)
   const quotationRef = data.quotationNumber || rawQuotationData?.Name || ''
   
-  // Get recipient info from shipping or billing data
-  const recipientName = shippingData?.Shipping_Address_Name || rawQuotationData?.Shipping_Address_Name || billingData?.Billing_Address_Name || rawQuotationData?.Billing_Address_Name || ''
-  const recipientAddress = shippingData?.Shipping_Street 
-    ? `${shippingData.Shipping_Street || rawQuotationData?.Shipping_Street || ''}, ${shippingData.Shipping_City || rawQuotationData?.Shipping_City || ''}, ${shippingData.Shipping_State || rawQuotationData?.Shipping_State || ''} ${shippingData.Shipping_Postal_Code || rawQuotationData?.Shipping_Postal_Code || ''}`
-    : billingData?.Billing_Street
+  const consignee = resolveConsigneeDisplay(shippingData, rawQuotationData)
+  const recipientName =
+    consignee.name ||
+    String(billingData?.Billing_Address_Name ?? rawQuotationData?.Billing_Address_Name ?? '').trim()
+  const recipientAddressShipping = [consignee.addressBlock, consignee.country].filter(Boolean).join('\n')
+  const recipientAddressBilling = billingData?.Billing_Street
     ? `${billingData.Billing_Street || rawQuotationData?.Billing_Street || ''}, ${billingData.Billing_City || rawQuotationData?.Billing_City || ''}, ${billingData.Billing_State || rawQuotationData?.Billing_State || ''} ${billingData.Billing_Postal_Code || rawQuotationData?.Billing_Postal_Code || ''}`
     : ''
+  const recipientAddress = recipientAddressShipping || recipientAddressBilling
+  const recipientAddressPreWrap = Boolean(recipientAddressShipping)
 
-  // Calculate totals from data
-  const totalAmount = data.totalAmount || data.lineItems.reduce((sum, item) => {
-    const amount = parseFloat(String(item.amount).replace(/,/g, '')) || 0
-    return sum + amount
-  }, 0)
+  const displayCurrency = data.currency || rawQuotationData?.Currency || 'INR'
+  const bvkTableRows = buildBvkQuotationTableRows(
+    rawQuotationData as Record<string, unknown> | null | undefined,
+    data.lineItems ?? []
+  )
+
+  const totalAmount =
+    bvkTableRows.length > 0
+      ? bvkTableRows.reduce((sum, row) => sum + row.totalPrice, 0)
+      : data.totalAmount ||
+        (data.lineItems ?? []).reduce((sum, item) => {
+          const amount = parseFloat(String(item.amount).replace(/,/g, '')) || 0
+          return sum + amount
+        }, 0)
 
   return (
     <>
@@ -123,7 +144,14 @@ export default function BVKQuotationContent({ data, shippingData, billingData, r
                   <div style={{ marginBottom: '4px' }}>Mr. ---------</div>
                   <div style={{ marginBottom: '15px' }}>{recipientName}</div>
                   {recipientAddress && (
-                    <div style={{ marginBottom: '15px' }}>{recipientAddress}</div>
+                    <div
+                      style={{
+                        marginBottom: '15px',
+                        whiteSpace: recipientAddressPreWrap ? 'pre-wrap' : undefined,
+                      }}
+                    >
+                      {recipientAddress}
+                    </div>
                   )}
                   <div style={{ borderTop: '1px dashed #000', marginBottom: '15px' }}></div>
                 </div>
@@ -147,29 +175,44 @@ export default function BVKQuotationContent({ data, shippingData, billingData, r
                         <th style={{ border: '1px solid #000', padding: '8px', textAlign: 'left', fontWeight: 'bold', width: '5%' }}>Item</th>
                         <th style={{ border: '1px solid #000', padding: '8px', textAlign: 'left', fontWeight: 'bold', width: '45%' }}>Product</th>
                         <th style={{ border: '1px solid #000', padding: '8px', textAlign: 'left', fontWeight: 'bold', width: '12%' }}>Qty/Pcs</th>
-                        <th style={{ border: '1px solid #000', padding: '8px', textAlign: 'left', fontWeight: 'bold', width: '18%' }}>Unit Price / INR</th>
-                        <th style={{ border: '1px solid #000', padding: '8px', textAlign: 'left', fontWeight: 'bold', width: '20%' }}>Total Price / INR</th>
+                        <th style={{ border: '1px solid #000', padding: '8px', textAlign: 'left', fontWeight: 'bold', width: '18%' }}>{`Unit Price / ${displayCurrency}`}</th>
+                        <th style={{ border: '1px solid #000', padding: '8px', textAlign: 'left', fontWeight: 'bold', width: '20%' }}>{`Total Price / ${displayCurrency}`}</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {data.lineItems.map((item, index) => (
+                      {bvkTableRows.map((row, index) => (
                         <tr key={index}>
                           <td style={{ border: '1px solid #000', padding: '8px', verticalAlign: 'top' }}>{index + 1}.</td>
                           <td style={{ border: '1px solid #000', padding: '8px', verticalAlign: 'top' }}>
-                            <div style={{ marginBottom: '4px' }}>Product Name : {item.product || '---------'}</div>
-                            <div style={{ marginBottom: '4px' }}>Size : {item.size || '---------'}</div>
-                            <div style={{ marginBottom: '4px' }}>Mesh : ---------</div>
-                            <div style={{ marginBottom: '4px' }}>Material : {item.quality || '---------'}</div>
-                            <div>Weave : ---------</div>
+                            {row.productColumnLines.length === 0 ? (
+                              <div style={{ marginBottom: '4px' }}>---------</div>
+                            ) : (
+                              row.productColumnLines.map((line, i) => (
+                                <div key={`${line.apiName}-${i}`} style={{ marginBottom: '4px' }}>
+                                  <span style={{ fontWeight: 'bold' }}>{line.apiName}</span>
+                                  {' : '}
+                                  {line.value}
+                                </div>
+                              ))
+                            )}
+                            <div style={{ marginBottom: '4px' }}>Mesh : {bvkMeshCellValue(row.meshDisplay)}</div>
+                            <div style={{ marginBottom: '4px' }}>
+                              Material : {row.materialDisplay?.trim() || '---------'}
+                            </div>
+                            <div>Weave : {row.weaveDisplay?.trim() || '---------'}</div>
                           </td>
                           <td style={{ border: '1px solid #000', padding: '8px', verticalAlign: 'top' }}>
-                            {item.qty ? `${item.qty} Pcs` : '--- Pcs'}
+                            {row.qty ? `${row.qty} Pcs` : '--- Pcs'}
                           </td>
                           <td style={{ border: '1px solid #000', padding: '8px', verticalAlign: 'top' }}>
-                            {item.rate ? formatCurrency(item.rate) : '---.00'}
+                            {row.unitPrice > 0
+                              ? formatCurrency(row.unitPrice, displayCurrency)
+                              : '---.00'}
                           </td>
                           <td style={{ border: '1px solid #000', padding: '8px', verticalAlign: 'top' }}>
-                            {item.amount ? formatCurrency(item.amount) : '---.00'}
+                            {row.totalPrice > 0
+                              ? formatCurrency(row.totalPrice, displayCurrency)
+                              : '---.00'}
                           </td>
                         </tr>
                       ))}
@@ -254,7 +297,12 @@ export default function BVKQuotationContent({ data, shippingData, billingData, r
                   {/* Quotation Validity */}
                   <div style={{ marginBottom: '12px' }}>
                     <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>Quotation Validity</div>
-                    <div style={{ marginLeft: '20px' }}>15 Days from the date of quotation.</div>
+                    <div style={{ marginLeft: '20px' }}>
+                      {resolveQuotationValidity(
+                        rawQuotationData as Record<string, unknown> | undefined,
+                        '15 Days from the date of quotation.'
+                      )}
+                    </div>
                   </div>
 
                   {/* Quantity Validity */}

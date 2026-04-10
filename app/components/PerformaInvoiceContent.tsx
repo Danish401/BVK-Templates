@@ -4,7 +4,13 @@ import Link from 'next/link'
 import type { ReactNode } from 'react'
 import type { QuotationData } from '@/lib/types'
 import GoodsDescriptionPaginatedBlock from './GoodsDescriptionPaginatedBlock'
-import { formatCurrency, formatAmountInWords, parseQuotationTaxForSummary } from '@/lib/quotation-utils'
+import {
+  formatCurrency,
+  formatAmountInWords,
+  parseQuotationTaxForSummary,
+  resolveQuotationValidity,
+  DEFAULT_WMW_PERFORMA_QUOTATION_VALIDITY_PHRASE,
+} from '@/lib/quotation-utils'
 import { resolveWmwChargeTotals } from '@/lib/wmw-subform-mapping'
 import QuotationHeaderThead from './QuotationHeaderThead'
 import QuotationSummarySection from './QuotationSummarySection'
@@ -163,6 +169,7 @@ export default function PerformaInvoiceContent({
                       wmwSeamChargeTotal={seamTotal}
                       sevenColumnGoodsLayout
                       notesMergedSlot={performaStaticRemarksBlock}
+                      rawQuotationData={rawQuotationData as Record<string, unknown> | null | undefined}
                     />
                     {performaBankDetailsBlock(data)}
                   </td>
@@ -297,7 +304,11 @@ export default function PerformaInvoiceContent({
                       <tr>
                         <td style={{ width: '61%', verticalAlign: 'top', border: '1px solid #000', padding: '0' }}>
                           <div style={{ padding: '6px 8px', borderBottom: '1px solid #000' }}>
-                            <strong>QUOTATION VALIDITY:</strong> 07 Days from the date of Quotation
+                            <strong>QUOTATION VALIDITY:</strong>{' '}
+                            {resolveQuotationValidity(
+                              rawQuotationData as Record<string, unknown> | undefined,
+                              DEFAULT_WMW_PERFORMA_QUOTATION_VALIDITY_PHRASE
+                            )}
                           </div>
                           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                             <thead>
@@ -334,18 +345,30 @@ export default function PerformaInvoiceContent({
                                 <td style={{ border: '1px solid #000', padding: '3px 8px', fontWeight: 'bold' }}>Total INR</td>
                                 <td style={{ border: '1px solid #000', padding: '3px 8px', textAlign: 'right' }}>{totalAmount}</td>
                               </tr>
-                              <tr>
-                                <td style={{ border: '1px solid #000', padding: '1px 8px' }}>Freight Charge</td>
-                                <td style={{ border: '1px solid #000', padding: '1px 8px', textAlign: 'right' }}>0.00</td>
-                              </tr>
-                              <tr>
-                                <td style={{ border: '1px solid #000', padding: '1px 8px' }}>Packing Charges</td>
-                                <td style={{ border: '1px solid #000', padding: '1px 8px', textAlign: 'right' }}>0.00</td>
-                              </tr>
-                              <tr>
-                                <td style={{ border: '1px solid #000', padding: '1px 8px' }}>Seam Charges</td>
-                                <td style={{ border: '1px solid #000', padding: '1px 8px', textAlign: 'right' }}>0.00</td>
-                              </tr>
+                              {Number.isFinite(freightTotal) && freightTotal !== 0 ? (
+                                <tr>
+                                  <td style={{ border: '1px solid #000', padding: '1px 8px' }}>Freight Charge</td>
+                                  <td style={{ border: '1px solid #000', padding: '1px 8px', textAlign: 'right' }}>
+                                    {formatCurrency(freightTotal, data.currency || 'INR')}
+                                  </td>
+                                </tr>
+                              ) : null}
+                              {Number.isFinite(packingTotal) && packingTotal !== 0 ? (
+                                <tr>
+                                  <td style={{ border: '1px solid #000', padding: '1px 8px' }}>Packing Charges</td>
+                                  <td style={{ border: '1px solid #000', padding: '1px 8px', textAlign: 'right' }}>
+                                    {formatCurrency(packingTotal, data.currency || 'INR')}
+                                  </td>
+                                </tr>
+                              ) : null}
+                              {Number.isFinite(seamTotal) && seamTotal !== 0 ? (
+                                <tr>
+                                  <td style={{ border: '1px solid #000', padding: '1px 8px' }}>Seam Charges</td>
+                                  <td style={{ border: '1px solid #000', padding: '1px 8px', textAlign: 'right' }}>
+                                    {formatCurrency(seamTotal, data.currency || 'INR')}
+                                  </td>
+                                </tr>
+                              ) : null}
                               <tr>
                                 <td style={{ border: '1px solid #000', padding: '1px 8px', fontWeight: 'bold' }}>Total Amount Before Tax</td>
                                 <td style={{ border: '1px solid #000', padding: '1px 8px', textAlign: 'right', fontWeight: 'bold' }}>

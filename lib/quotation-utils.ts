@@ -58,6 +58,59 @@ export function formatCurrency(value: string | number | undefined, currency: str
   return num.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+/**
+ * Zoho `Quotation_Validity` when the field exists on the record; else `Offer_Validity`; else `defaultValue`.
+ * If `Quotation_Validity` is present but null, returns '' (empty is intentional, same as SLS template).
+ */
+export function resolveQuotationValidity(
+  rawQuotationData: Record<string, unknown> | null | undefined,
+  defaultValue = '7 Days'
+): string {
+  const raw = rawQuotationData
+  if (raw != null && Object.prototype.hasOwnProperty.call(raw, 'Quotation_Validity')) {
+    const v = raw.Quotation_Validity
+    return v == null ? '' : String(v)
+  }
+  return String(raw?.Offer_Validity ?? '') || defaultValue
+}
+
+/** WMW WMWD1 / Performa summary row when Zoho `Quotation_Validity` and `Offer_Validity` are absent. */
+export const DEFAULT_WMW_PERFORMA_QUOTATION_VALIDITY_PHRASE = '07 Days from the date of Quotation'
+
+/** Mesh column: first numeric segment after the 4th dot in Product_Code, shown as `value/Inch` (BVK / WMW-style codes). */
+export function meshInchFromProductCode(productCode?: string): string {
+  const s = String(productCode ?? '').trim()
+  if (!s) return ''
+  const parts = s.split('.')
+  if (parts.length < 5) return ''
+  const tail = parts.slice(4).join('.')
+  const m = tail.match(/\d+(?:\.\d+)?/)
+  return m ? `${m[0]}/Inch` : ''
+}
+
+/** Which Zoho subform bundle supplies line items for the BVK Hydrotech tab (first non-empty wins: Cat1 WI → Cat2 WI → fitments). */
+export type BvkZohoLineSource = 'cat1_wi' | 'cat2_wi' | 'fitments'
+
+export function resolveBvkLineSource(zohoData: ZohoQuotation): BvkZohoLineSource {
+  const c1p = ((zohoData.Category_1_MM_Database_WI as any[]) || []).length
+  const c120 = ((zohoData.Category_1_MM_Database_WI_2_0 as any[]) || []).length
+  const c130 = ((zohoData.Category_1_MM_Database_WI_3_0 as any[]) || []).length
+  const c2p = ((zohoData.Category_2_MM_Database_WI as any[]) || []).length
+  const c220 = ((zohoData.Category_2_MM_Database_WI_2_0 as any[]) || []).length
+  const c230 = ((zohoData.Category_2_MM_Database_WI_3_0 as any[]) || []).length
+  const pf2 = ((zohoData.Product_Fitments2_0 as any[]) || []).length
+  const pf = ((zohoData.Product_Fitments as any[]) || []).length
+
+  const hasCat1 = c1p > 0 || c120 > 0 || c130 > 0
+  const hasCat2 = c2p > 0 || c220 > 0 || c230 > 0
+  const hasFit = pf2 > 0 || pf > 0
+
+  if (hasCat1) return 'cat1_wi'
+  if (hasCat2) return 'cat2_wi'
+  if (hasFit) return 'fitments'
+  return 'cat1_wi'
+}
+
 function parseNumericField(value: unknown): number {
   const x = parseFloat(String(value ?? '').replace(/,/g, ''))
   return Number.isFinite(x) ? x : 0
@@ -189,7 +242,7 @@ export function formatAmountInWords(amount: number, currency: string = 'INR'): s
 }
 
 /** Stable key for merging WI_2_0 / WI_3_0 rows (same Line_Item_ref → one logical line) */
-function category1WiLineMergeKey(row: any, seq: number): string {
+function wiLineMergeKey(row: any, seq: number): string {
   const r =
     row?.Line_Item_ref?.trim() ||
     row?.Last_item_ref?.trim() ||
@@ -199,13 +252,13 @@ function category1WiLineMergeKey(row: any, seq: number): string {
 }
 
 /**
- * Merge Category_1_MM_Database_WI_2_0 and Category_1_MM_Database_WI_3_0 by ref.
- * Rows with the same Line_Item_ref become one object (WI_3_0 fields overlay WI_2_0).
+ * Merge WI_2_0 and WI_3_0 line subforms by ref (Category 1 or Category 2).
+ * Rows with the same Line_Item_ref become one object (3_0 fields overlay 2_0).
  */
-function mergeCategory1WiLineSubformsByRef(wi20: any[], wi30: any[]): Map<string, any> {
+function mergeWiLineSubformsByRef(wi20: any[], wi30: any[]): Map<string, any> {
   const map = new Map<string, any>()
   const ingest = (row: any, seq: number) => {
-    const key = category1WiLineMergeKey(row, seq)
+    const key = wiLineMergeKey(row, seq)
     const prev = map.get(key)
     map.set(key, prev ? { ...prev, ...row } : { ...row })
   }
@@ -214,7 +267,7 @@ function mergeCategory1WiLineSubformsByRef(wi20: any[], wi30: any[]): Map<string
   return map
 }
 
-function category1WiProductRef(pd: any): string | null {
+function wiProductRef(pd: any): string | null {
   const r =
     pd?.Line_Item_ref?.trim() ||
     pd?.Last_item_ref?.trim() ||
@@ -225,14 +278,14 @@ function category1WiProductRef(pd: any): string | null {
 /**
  * Pick merged line row for a product subform row without double-using the same billing line.
  */
-function pickMergedLineForCategory1WiProduct(
+function pickMergedLineForWiProduct(
   pd: any,
   index: number,
   mergedByRef: Map<string, any>,
   wi20: any[],
   usedLineKeys: Set<string>
 ): any {
-  const pdR = category1WiProductRef(pd)
+  const pdR = wiProductRef(pd)
   if (pdR && mergedByRef.has(pdR) && !usedLineKeys.has(pdR)) {
     usedLineKeys.add(pdR)
     return mergedByRef.get(pdR)!
@@ -244,14 +297,14 @@ function pickMergedLineForCategory1WiProduct(
   }
   const row20 = wi20[index]
   if (row20) {
-    const k = category1WiLineMergeKey(row20, index)
+    const k = wiLineMergeKey(row20, index)
     if (mergedByRef.has(k) && !usedLineKeys.has(k)) {
       usedLineKeys.add(k)
       return mergedByRef.get(k)!
     }
   }
   if (index === 0 && mergedByRef.size === 1) {
-    const onlyKey = [...mergedByRef.keys()][0]
+    const onlyKey = Array.from(mergedByRef.keys())[0]
     if (!usedLineKeys.has(onlyKey)) {
       usedLineKeys.add(onlyKey)
       return mergedByRef.get(onlyKey)!
@@ -297,6 +350,11 @@ export function getCategoryFieldsFromTemplate(templateField?: string, zohoData?:
       }
     }
     // Default to WI if no data found
+    return {
+      lineItemsField: 'Category_1_MM_Database_WI_2_0',
+      productDetailsField: 'Category_1_MM_Database_WI'
+    }
+  } else if (template.includes('wmwe1')) {
     return {
       lineItemsField: 'Category_1_MM_Database_WI_2_0',
       productDetailsField: 'Category_1_MM_Database_WI'
@@ -349,7 +407,11 @@ export function determineTemplateType(
 ): TemplateType {
   const typeOfQuot = typeOfQuotation?.trim().toLowerCase() || ''
   const template = templateField?.trim().toLowerCase() || ''
-  
+
+  if (template.includes('wmwe1')) {
+    return 'WMWE1'
+  }
+
   // If Type_Of_Quotation is "Export" or "Import" AND Template is "Category 1 WI" or "Category 2 WI", use SLS template
   if ((typeOfQuot === 'export' || typeOfQuot === 'import') && 
       (template.includes('category 1 wi') || template.includes('category 2 wi') || 
@@ -419,7 +481,7 @@ export function transformQuotationData(
       ? (zohoData.Category_1_MM_Database_WI_2_0 || [])
       : templateType === 'WMW2'
       ? (zohoData.Category_2_MM_Database_WMW_2_0 || [])
-      : templateType === 'EXPORT'
+      : templateType === 'EXPORT' || templateType === 'WMWE1'
       ? (zohoData.Category_1_MM_Database_WI_2_0 || [])
       : templateType === 'SLS'
       ? (zohoData.Category_1_MM_Database_WI_2_0 || [])
@@ -433,7 +495,7 @@ export function transformQuotationData(
       ? (zohoData.Category_1_MM_Database_WI || [])
       : templateType === 'WMW2'
       ? (zohoData.Category_2_MM_Database_WMW || [])
-      : templateType === 'EXPORT'
+      : templateType === 'EXPORT' || templateType === 'WMWE1'
       ? (zohoData.Category_1_MM_Database_WI || [])
       : templateType === 'SLS'
       ? (zohoData.Category_1_MM_Database_WI || [])
@@ -451,17 +513,24 @@ export function transformQuotationData(
   const fallbackUsesCategory1WiLines =
     !categoryFields &&
     (templateType === 'WI' ||
-      templateType === 'EXPORT' ||
+      templateType === 'EXPORT' ||  
+      templateType === 'WMWE1' ||
       templateType === 'SLS' ||
       templateType === 'GKD' ||
       templateType === 'BVK')
 
   const wi20Category1 = (zohoData.Category_1_MM_Database_WI_2_0 as any[]) || []
   const wi30Category1 = (zohoData.Category_1_MM_Database_WI_3_0 as any[]) || []
+  const wi20Category2 = (zohoData.Category_2_MM_Database_WI_2_0 as any[]) || []
+  const wi30Category2 = (zohoData.Category_2_MM_Database_WI_3_0 as any[]) || []
   const isCategory1WiBundle = usesCategory1WiLineAndProduct || fallbackUsesCategory1WiLines
   const mergedCategory1WiLines = isCategory1WiBundle
-    ? mergeCategory1WiLineSubformsByRef(wi20Category1, wi30Category1)
+    ? mergeWiLineSubformsByRef(wi20Category1, wi30Category1)
     : null
+  const mergedCategory2WiLines = mergeWiLineSubformsByRef(wi20Category2, wi30Category2)
+  const bvkZohoSource: BvkZohoLineSource | null =
+    templateType === 'BVK' ? resolveBvkLineSource(zohoData) : null
+  const currency = zohoData.Currency || 'INR'
 
   /**
    * Extracts Quality from Product_Code by splitting on '.' and getting second-to-last segment
@@ -635,11 +704,168 @@ export function transformQuotationData(
       const amountNum = parseFloat(amount.toString().replace(/,/g, '')) || 0
       totalAmount += amountNum
     })
+  } else if (
+    templateType === 'BVK' &&
+    bvkZohoSource === 'cat2_wi' &&
+    (mergedCategory2WiLines.size > 0 || ((zohoData.Category_2_MM_Database_WI as any[]) || []).length > 0)
+  ) {
+    const productDetailsCat2 = (zohoData.Category_2_MM_Database_WI as any[]) || []
+    const usedLineKeysCat2 = new Set<string>()
+    const pushCat2WiRow = (productDetail: any, item: any) => {
+      const product = productDetail.Product_Name || productDetail.Product_Group || 'N/A'
+      const type = productDetail.Brand_Category || item.Line_Item_ref || ''
+      const quality =
+        extractQualityFromProductCode(productDetail.Product_Code) ||
+        String(productDetail.Material ?? '').trim() ||
+        ''
+      const form =
+        item.Invoice_Dimension_Type ||
+        productDetail.Invoice_Form ||
+        productDetail.Supply_Form ||
+        ''
+      const size =
+        item.Invoice_Dimension_1 && item.Invoice_Dimension_2
+          ? `${item.Invoice_Dimension_1}x${item.Invoice_Dimension_2}`
+          : productDetail.Supply_Dimension_1 && productDetail.Supply_Dimension_2
+            ? `${productDetail.Supply_Dimension_1}x${productDetail.Supply_Dimension_2}`
+            : item.Invoice_Dimension_1 || productDetail.Supply_Dimension_1 || ''
+
+      const qty = item.Qty?.trim() || '0'
+      const subQty = item.SQM?.trim() || '0'
+      const rate = item.Selling_Price?.trim() || '0'
+      const amount =
+        item.Total_Sale_Value?.trim() ||
+        item.Net_Selling_Amount?.trim() ||
+        item.Gross_Amount?.trim() ||
+        '0'
+
+      const qtyNum = parseFloat(qty.replace(/,/g, '')) || 0
+      const unit =
+        qtyNum === 1
+          ? 'One Pc'
+          : qtyNum === 2
+            ? 'Two Pc'
+            : qtyNum === 3
+              ? 'Three Pc'
+              : qtyNum === 4
+                ? 'Four Pc'
+                : qtyNum > 0
+                  ? `${qtyNum} Pc`
+                  : ''
+
+      const pieces = item.Pieces?.trim() || ''
+      const mesh = meshInchFromProductCode(productDetail.Product_Code)
+      const weave = String(productDetail.Seam_Type ?? '').trim()
+
+      lineItems.push({
+        product,
+        quality,
+        form,
+        size,
+        type,
+        delivery: formatDate(zohoData.Delivery_Date_Control),
+        uom: item.UOM_Billing?.trim() || 'SQMT',
+        qty,
+        subQty,
+        unit,
+        pieces,
+        rate: formatCurrency(rate, currency),
+        amount: formatCurrency(amount, currency),
+        ...(mesh ? { mesh } : {}),
+        ...(weave ? { weave } : {}),
+      })
+
+      const amountNum = parseFloat(amount.toString().replace(/,/g, '')) || 0
+      totalAmount += amountNum
+    }
+
+    if (productDetailsCat2.length > 0) {
+      productDetailsCat2.forEach((productDetail, index) => {
+        const item = pickMergedLineForWiProduct(
+          productDetail,
+          index,
+          mergedCategory2WiLines,
+          wi20Category2,
+          usedLineKeysCat2
+        )
+        pushCat2WiRow(productDetail, item)
+      })
+    } else {
+      mergedCategory2WiLines.forEach((item) => {
+        pushCat2WiRow({}, item)
+      })
+    }
+  } else if (templateType === 'BVK' && bvkZohoSource === 'fitments') {
+    const rows2 = (zohoData.Product_Fitments2_0 as any[]) || []
+    const rows1 = (zohoData.Product_Fitments as any[]) || []
+    const fitRows = rows2.length > 0 ? rows2 : rows1
+    fitRows.forEach((row: any) => {
+      const product =
+        String(
+          row.Product_Name ??
+            row.Product_Group ??
+            row.Description ??
+            row.Item_Name ??
+            row.zc_display_value ??
+            ''
+        ).trim() || 'N/A'
+      const pc = String(row.Product_Code ?? '').trim()
+      const quality =
+        extractQualityFromProductCode(pc) || String(row.Material ?? row.Material_Code ?? '').trim() || ''
+      const form = String(row.Invoice_Form ?? row.Supply_Form ?? row.Invoice_Dimension_Type ?? '').trim()
+      const type = String(row.Brand_Category ?? '').trim()
+      const size =
+        [row.Length_field, row.Width].filter(Boolean).join('x').trim() ||
+        [row.Invoice_Dimension_1, row.Invoice_Dimension_2].filter(Boolean).join('x').trim() ||
+        [row.Supply_Dimension_1, row.Supply_Dimension_2].filter(Boolean).join('x').trim() ||
+        ''
+      const qty = String(row.Qty ?? row.Quantity ?? row.Pieces ?? '').trim() || '0'
+      const subQty = String(row.SQM ?? '').trim() || '0'
+      const rate = String(row.Selling_Price ?? row.List_Price ?? row.Rate ?? '0').trim()
+      const amount = String(
+        row.Total_Sale_Value ?? row.Net_Selling_Amount ?? row.Gross_Amount ?? row.Total_Price ?? '0'
+      ).trim()
+      const qtyNum = parseFloat(qty.replace(/,/g, '')) || 0
+      const unit =
+        qtyNum === 1
+          ? 'One Pc'
+          : qtyNum === 2
+            ? 'Two Pc'
+            : qtyNum === 3
+              ? 'Three Pc'
+              : qtyNum === 4
+                ? 'Four Pc'
+                : qtyNum > 0
+                  ? `${qtyNum} Pc`
+                  : ''
+      const pieces = String(row.Pieces ?? '').trim()
+      const mesh = meshInchFromProductCode(pc)
+      const weave = String(row.Seam_Type ?? row.Weave ?? '').trim()
+      const amountNum = parseFloat(amount.replace(/,/g, '')) || 0
+      totalAmount += amountNum
+      lineItems.push({
+        product,
+        quality,
+        form,
+        size,
+        type,
+        delivery: formatDate(zohoData.Delivery_Date_Control),
+        uom: String(row.UOM_Billing ?? 'SQMT').trim() || 'SQMT',
+        qty,
+        subQty,
+        unit,
+        pieces,
+        rate: formatCurrency(rate, currency),
+        amount: formatCurrency(amount, currency),
+        ...(mesh ? { mesh } : {}),
+        ...(weave ? { weave } : {}),
+      })
+    })
   } else if (mergedCategory1WiLines && productDetails.length > 0) {
     // One table row per Category_1_MM_Database_WI product; merge WI_2_0 + WI_3_0 by Line_Item_ref (no duplicate rows)
     const usedLineKeys = new Set<string>()
     productDetails.forEach((productDetail, index) => {
-      const item = pickMergedLineForCategory1WiProduct(
+      const item = pickMergedLineForWiProduct(
         productDetail,
         index,
         mergedCategory1WiLines,
@@ -665,7 +891,11 @@ export function transformQuotationData(
       const qty = item.Qty?.trim() || '0'
       const subQty = item.SQM?.trim() || '0'
       const rate = item.Selling_Price?.trim() || '0'
-      const amount = item.Total_Sale_Value?.trim() || '0'
+      const amount =
+        item.Total_Sale_Value?.trim() ||
+        item.Net_Selling_Amount?.trim() ||
+        item.Gross_Amount?.trim() ||
+        '0'
 
       const qtyNum = parseFloat(qty.replace(/,/g, '')) || 0
       const unit =
@@ -682,6 +912,8 @@ export function transformQuotationData(
                   : ''
 
       const pieces = item.Pieces?.trim() || ''
+      const mesh = meshInchFromProductCode(productDetail.Product_Code)
+      const weave = String(productDetail.Seam_Type ?? '').trim()
 
       lineItems.push({
         product,
@@ -695,8 +927,10 @@ export function transformQuotationData(
         subQty,
         unit,
         pieces,
-        rate: formatCurrency(rate),
-        amount: formatCurrency(amount),
+        rate: formatCurrency(rate, currency),
+        amount: formatCurrency(amount, currency),
+        ...(mesh ? { mesh } : {}),
+        ...(weave ? { weave } : {}),
       })
 
       const amountNum = parseFloat(amount.toString().replace(/,/g, '')) || 0
@@ -722,7 +956,11 @@ export function transformQuotationData(
       const qty = item.Qty?.trim() || '0'
       const subQty = item.SQM?.trim() || '0'
       const rate = item.Selling_Price?.trim() || '0'
-      const amount = item.Total_Sale_Value?.trim() || '0'
+      const amount =
+        item.Total_Sale_Value?.trim() ||
+        item.Net_Selling_Amount?.trim() ||
+        item.Gross_Amount?.trim() ||
+        '0'
 
       const qtyNum = parseFloat(qty.replace(/,/g, '')) || 0
       const unit =
@@ -739,6 +977,8 @@ export function transformQuotationData(
                   : ''
 
       const pieces = item.Pieces?.trim() || ''
+      const mesh = meshInchFromProductCode(item.Product_Code)
+      const weave = String(item.Seam_Type ?? productDetail.Seam_Type ?? '').trim()
 
       lineItems.push({
         product,
@@ -752,8 +992,10 @@ export function transformQuotationData(
         subQty,
         unit,
         pieces,
-        rate: formatCurrency(rate),
-        amount: formatCurrency(amount),
+        rate: formatCurrency(rate, currency),
+        amount: formatCurrency(amount, currency),
+        ...(mesh ? { mesh } : {}),
+        ...(weave ? { weave } : {}),
       })
 
       const amountNum = parseFloat(amount.toString().replace(/,/g, '')) || 0
@@ -793,7 +1035,11 @@ export function transformQuotationData(
       const qty = item.Qty?.trim() || '0'
       const subQty = item.SQM?.trim() || '0'
       const rate = item.Selling_Price?.trim() || '0'
-      const amount = item.Total_Sale_Value?.trim() || '0'
+      const amount =
+        item.Total_Sale_Value?.trim() ||
+        item.Net_Selling_Amount?.trim() ||
+        item.Gross_Amount?.trim() ||
+        '0'
 
       const qtyNum = parseFloat(qty.replace(/,/g, '')) || 0
       const unit =
@@ -810,6 +1056,8 @@ export function transformQuotationData(
                   : ''
 
       const pieces = item.Pieces?.trim() || ''
+      const mesh = meshInchFromProductCode(productDetail.Product_Code || (item as any).Product_Code)
+      const weave = String(productDetail.Seam_Type ?? '').trim()
 
       lineItems.push({
         product,
@@ -823,8 +1071,10 @@ export function transformQuotationData(
         subQty,
         unit,
         pieces,
-        rate: formatCurrency(rate),
-        amount: formatCurrency(amount),
+        rate: formatCurrency(rate, currency),
+        amount: formatCurrency(amount, currency),
+        ...(mesh ? { mesh } : {}),
+        ...(weave ? { weave } : {}),
       })
 
       const amountNum = parseFloat(amount.toString().replace(/,/g, '')) || 0

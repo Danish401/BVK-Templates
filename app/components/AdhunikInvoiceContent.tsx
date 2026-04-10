@@ -2,6 +2,9 @@
 
 import Link from 'next/link'
 import type { QuotationData } from '@/lib/types'
+import { resolveConsigneeDisplay } from '@/lib/consignee-display'
+import { quotationRichText } from '@/lib/quotation-rich-text'
+import { resolveQuotationValidity } from '@/lib/quotation-utils'
 import AdhunikGoodsTable from './AdhunikGoodsTable'
 
 interface AdhunikInvoiceContentProps {
@@ -23,9 +26,7 @@ export default function AdhunikInvoiceContent({
   const buyerEnquiryDate = data.customerReferenceDate || rawQuotationData?.Customer_Reference_Date || ''
   const otherReference = rawQuotationData?.Additional_info || ''
 
-  const consigneeName = 'ADHUNIK PAPER MILLS LTD'
-  const consigneeAddress = 'Fac : Anarpura, Bhaberchar, Gajaria, Munshigonj\nH/O: 60/61, Baizid Bostami Road, Nasirabad Industrial Area, Chittagong'
-  const consigneeCountry = 'Bangladesh'
+  const consignee = resolveConsigneeDisplay(shippingData, rawQuotationData)
 
   const countryOfOrigin = rawQuotationData?.Billing_Country || 'India'
   const countryOfDestination = rawQuotationData?.Shipping_Country || shippingData?.Shipping_Country || 'Benapole, Bangladesh'
@@ -35,6 +36,7 @@ export default function AdhunikInvoiceContent({
   const finalDestination = rawQuotationData?.Final_Destination || portOfDischarge || 'Benapole, Bangladesh'
   const dispatchExWorks = rawQuotationData?.Delivery_Date_Control || data.deliveryDate || '3-4 Weeks after receipt of confirm PO'
   const termsOfPayment = data.termsOfPayment || rawQuotationData?.Term_of_Payment || '100% Payment against at sight LC'
+  const ourBankDetails = quotationRichText(rawQuotationData, 'Our_Bank_Details')
 
   return (
     <>
@@ -116,14 +118,14 @@ export default function AdhunikInvoiceContent({
                 <tr>
                   <td style={{ width: '53%', verticalAlign: 'top', border: '1px solid #000', padding: '8px' }}>
                     <div style={{ fontWeight: 'bold', fontSize: '11px', marginBottom: '6px' }}>Consignee</div>
-                    <div style={{ fontWeight: 'bold', fontSize: '13px' }}>{consigneeName}</div>
-                    <div style={{ fontSize: '11px', lineHeight: 1.4, whiteSpace: 'pre-wrap' }}>{consigneeAddress}</div>
-                    <div style={{ fontWeight: 'bold', fontSize: '13px', lineHeight: 1.4, marginTop: '2px' }}>{consigneeCountry}</div>
+                    <div style={{ fontWeight: 'bold', fontSize: '13px' }}>{consignee.name}</div>
+                    <div style={{ fontSize: '11px', lineHeight: 1.4, whiteSpace: 'pre-wrap' }}>{consignee.addressBlock}</div>
+                    <div style={{ fontWeight: 'bold', fontSize: '13px', lineHeight: 1.4, marginTop: '2px' }}>{consignee.country}</div>
                   </td>
                   <td style={{ width: '47%', verticalAlign: 'top', border: '1px solid #000', padding: 0 }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', height: '100%' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
                       <tbody>
-                        <tr style={{ height: '33.33%' }}>
+                        <tr>
                           <td style={{ width: '50%', border: '1px solid #000', padding: '2px 6px 4px 6px', verticalAlign: 'top' }}>
                             <div style={{ fontWeight: 'bold', marginBottom: '2px' }}>Country of Origin of Goods</div>
                             <div>{countryOfOrigin}</div>
@@ -133,10 +135,23 @@ export default function AdhunikInvoiceContent({
                             <div>{countryOfDestination}</div>
                           </td>
                         </tr>
-                        <tr style={{ height: '66.66%' }}>
+                        <tr>
                           <td colSpan={2} style={{ border: '1px solid #000', padding: '2px 6px 4px 6px', verticalAlign: 'top' }}>
                             <div style={{ fontWeight: 'bold', textDecoration: 'underline', marginBottom: '2px' }}>Terms of Payment</div>
                             <div style={{ fontWeight: 'bold' }}>{termsOfPayment}</div>
+                            {ourBankDetails ? (
+                              <div
+                                style={{
+                                  marginTop: '8px',
+                                  fontWeight: 'normal',
+                                  fontSize: '10px',
+                                  lineHeight: 1.35,
+                                  whiteSpace: 'pre-wrap',
+                                }}
+                              >
+                                {ourBankDetails}
+                              </div>
+                            ) : null}
                           </td>
                         </tr>
                       </tbody>
@@ -193,11 +208,8 @@ export default function AdhunikInvoiceContent({
                     <table className="quotation-stack-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
                       <tbody>
                         <tr>
-                          <td style={{ width: '60%', border: '1px solid #000', padding: '4px 6px', fontWeight: 'bold' }}>
-                            HS Code: {rawQuotationData?.HS_Code || '7314.1200'}
-                          </td>
-                          <td style={{ width: '40%', border: '1px solid #000', padding: '4px 6px' }}>
-                            Offer Validity : {rawQuotationData?.Offer_Validity || '7 Days'}
+                          <td colSpan={2} style={{ width: '100%', border: '1px solid #000', padding: '4px 6px' }}>
+                            <span style={{ fontWeight: 'bold' }}>Offer Validity :</span> {resolveQuotationValidity(rawQuotationData as Record<string, unknown> | undefined)}
                           </td>
                         </tr>
                         <tr>
