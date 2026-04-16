@@ -656,7 +656,8 @@ export function transformQuotationData(
       // Map quantities and pricing for WMW
       const qty = item.Qty?.trim() || productDetail.Qty?.trim() || '0'
       const subQty = item.SQM?.trim() || productDetail.SQM?.trim() || productDetail.Total_SQM?.trim() || '0'
-      const rate = item.Selling_Price?.trim() || productDetail.List_Price?.trim() || '0'
+      // Rate must come only from Zoho `Selling_Price` (no fallbacks). Empty string when missing.
+      const rate = item.Selling_Price?.trim() || ''
       // Use Total_Cost for WMW2, Gross_Amount for WMW, fallback to Total_Price or Total_Sale_Value
       const amount = templateType === 'WMW2'
         ? (item.Total_Cost?.trim() || item.Gross_Amount?.trim() || productDetail.Total_Price?.trim() || item.Total_Sale_Value?.trim() || '0')
@@ -696,7 +697,7 @@ export function transformQuotationData(
         subQty,
         unit,
         pieces: pieces && subQty ? `${subQty}, ${unit}` : (pieces || ''),
-        rate: formatCurrency(rate),
+        rate: rate ? formatCurrency(rate) : '',
         amount: formatCurrency(amount),
       })
 
@@ -732,7 +733,7 @@ export function transformQuotationData(
 
       const qty = item.Qty?.trim() || '0'
       const subQty = item.SQM?.trim() || '0'
-      const rate = item.Selling_Price?.trim() || '0'
+      const rate = item.Selling_Price?.trim() || ''
       const amount =
         item.Total_Sale_Value?.trim() ||
         item.Net_Selling_Amount?.trim() ||
@@ -769,7 +770,7 @@ export function transformQuotationData(
         subQty,
         unit,
         pieces,
-        rate: formatCurrency(rate, currency),
+        rate: rate ? formatCurrency(rate, currency) : '',
         amount: formatCurrency(amount, currency),
         ...(mesh ? { mesh } : {}),
         ...(weave ? { weave } : {}),
@@ -821,7 +822,7 @@ export function transformQuotationData(
         ''
       const qty = String(row.Qty ?? row.Quantity ?? row.Pieces ?? '').trim() || '0'
       const subQty = String(row.SQM ?? '').trim() || '0'
-      const rate = String(row.Selling_Price ?? row.List_Price ?? row.Rate ?? '0').trim()
+      const rate = String(row.Selling_Price ?? '').trim()
       const amount = String(
         row.Total_Sale_Value ?? row.Net_Selling_Amount ?? row.Gross_Amount ?? row.Total_Price ?? '0'
       ).trim()
@@ -855,7 +856,7 @@ export function transformQuotationData(
         subQty,
         unit,
         pieces,
-        rate: formatCurrency(rate, currency),
+        rate: rate ? formatCurrency(rate, currency) : '',
         amount: formatCurrency(amount, currency),
         ...(mesh ? { mesh } : {}),
         ...(weave ? { weave } : {}),
@@ -890,7 +891,7 @@ export function transformQuotationData(
 
       const qty = item.Qty?.trim() || '0'
       const subQty = item.SQM?.trim() || '0'
-      const rate = item.Selling_Price?.trim() || '0'
+      const rate = item.Selling_Price?.trim() || ''
       const amount =
         item.Total_Sale_Value?.trim() ||
         item.Net_Selling_Amount?.trim() ||
@@ -927,7 +928,7 @@ export function transformQuotationData(
         subQty,
         unit,
         pieces,
-        rate: formatCurrency(rate, currency),
+        rate: rate ? formatCurrency(rate, currency) : '',
         amount: formatCurrency(amount, currency),
         ...(mesh ? { mesh } : {}),
         ...(weave ? { weave } : {}),
@@ -955,7 +956,7 @@ export function transformQuotationData(
 
       const qty = item.Qty?.trim() || '0'
       const subQty = item.SQM?.trim() || '0'
-      const rate = item.Selling_Price?.trim() || '0'
+      const rate = item.Selling_Price?.trim() || ''
       const amount =
         item.Total_Sale_Value?.trim() ||
         item.Net_Selling_Amount?.trim() ||
@@ -992,7 +993,7 @@ export function transformQuotationData(
         subQty,
         unit,
         pieces,
-        rate: formatCurrency(rate, currency),
+        rate: rate ? formatCurrency(rate, currency) : '',
         amount: formatCurrency(amount, currency),
         ...(mesh ? { mesh } : {}),
         ...(weave ? { weave } : {}),
@@ -1034,7 +1035,7 @@ export function transformQuotationData(
 
       const qty = item.Qty?.trim() || '0'
       const subQty = item.SQM?.trim() || '0'
-      const rate = item.Selling_Price?.trim() || '0'
+      const rate = item.Selling_Price?.trim() || ''
       const amount =
         item.Total_Sale_Value?.trim() ||
         item.Net_Selling_Amount?.trim() ||
@@ -1071,7 +1072,7 @@ export function transformQuotationData(
         subQty,
         unit,
         pieces,
-        rate: formatCurrency(rate, currency),
+        rate: rate ? formatCurrency(rate, currency) : '',
         amount: formatCurrency(amount, currency),
         ...(mesh ? { mesh } : {}),
         ...(weave ? { weave } : {}),

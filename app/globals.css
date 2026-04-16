@@ -1007,6 +1007,53 @@ body {
   border-right: 1px solid #000 !important;
 }
 
+/*
+ * Fixed-layout goods tables: long formatted amounts (e.g. 4,087,341.88) must not clip
+ * against the cell border. Applies across invoice/quotation templates using
+ * `.goods-description-table.quotation-stack-table`.
+ */
+.quotation-doc table.goods-description-table.quotation-stack-table,
+.quotation-doc table.goods-description-table.quotation-stack-table td,
+.quotation-doc table.goods-description-table.quotation-stack-table th {
+  overflow: visible !important;
+}
+
+.quotation-doc table.goods-description-table.quotation-stack-table td[style*='text-align: right'],
+.quotation-doc table.goods-description-table.quotation-stack-table td[style*='text-align:right'] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Optional wrapper for very long totals — use where needed */
+.quotation-doc .quotation-grand-total-amount {
+  display: inline-block;
+  white-space: nowrap;
+  max-width: 100%;
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(9px, 1.1vw, 12px);
+}
+
+/* Quantity + UOM (e.g. "120.3654 Roll") should never overflow fixed cells */
+.quotation-doc .quotation-qty-uom-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  line-height: 1.1;
+}
+
+.quotation-doc .quotation-qty-value {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.quotation-doc .quotation-qty-uom {
+  margin-top: 2px;
+  white-space: nowrap;
+}
+
 /* ── Seamless quotation grid (no gaps between stacked tables, like PDF reference) ── */
 .quotation-doc .quotation-content-section--seamless {
   padding: 0 0 12px !important;

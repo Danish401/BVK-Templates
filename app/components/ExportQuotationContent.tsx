@@ -150,6 +150,16 @@ export default function ExportQuotationContent({
   const totalWithCharges = baseAmount + packingFreight + transaction
   const amountInWords = numberToWords(totalWithCharges)
   const currencyWords = currency === 'USD' ? 'US Dollars' : currency === 'INR' ? 'Indian Rupees' : currency
+
+  const splitQtyAndUom = (value: unknown): { qty: string; uom: string } => {
+    const s = String(value ?? '').trim()
+    if (!s) return { qty: '', uom: '' }
+    const parts = s.split(/\s+/).filter(Boolean)
+    if (parts.length < 2) return { qty: s, uom: '' }
+    const uom = parts.pop() || ''
+    const qty = parts.join(' ')
+    return { qty, uom }
+  }
   
   // Line grid: prefer main WMW + linked subforms (last_item_ref); else legacy WMW_2_0 × main merge
   const lineItems: ExportTableLine[] = useWmwJoinedPipeline
@@ -194,8 +204,12 @@ export default function ExportQuotationContent({
 
         const sqmArea = productDetail.Total_SQM?.trim() || productDetail.SQM?.trim() || ''
         const quantity = productDetail.Qty?.trim() || item.Qty?.trim() || '0'
-        const rate = parseFloat(productDetail.List_Price?.replace(/,/g, '') || item.Selling_Price?.replace(/,/g, '') || '0')
-        const amount = parseFloat(item.Net_Selling_Amount?.replace(/,/g, '') || item.Gross_Amount?.replace(/,/g, '') || '0')
+        const rateStr = item.Selling_Price?.replace(/,/g, '') || ''
+        const rate = rateStr ? (parseFloat(rateStr) || 0) : NaN
+        const qtyNum = parseFloat(String(quantity).replace(/,/g, '').trim() || '0')
+        const amountFromLine = parseFloat(item.Net_Selling_Amount?.replace(/,/g, '') || item.Gross_Amount?.replace(/,/g, '') || '0')
+        const computedAmount = qtyNum * rate
+        const amount = Number.isFinite(computedAmount) ? computedAmount : amountFromLine
 
         return {
           item: index + 1,
@@ -219,7 +233,10 @@ export default function ExportQuotationContent({
 
   return (
     <>
-      <div className="export-quotation-container" style={{ maxWidth: '210mm', margin: '0 auto', padding: '8mm 15mm 15mm 15mm', fontFamily: 'Arial, sans-serif', fontSize: '11px', lineHeight: '1.4', border: '1px solid #000' }}>
+      <div
+        className="export-quotation-container quotation-doc"
+        style={{ maxWidth: '210mm', margin: '0 auto', padding: '8mm 15mm 15mm 15mm', fontFamily: 'Arial, sans-serif', fontSize: '11px', lineHeight: '1.4', border: '1px solid #000' }}
+      >
 
         {/* Print table — thead repeats on every printed page */}
         <table className="export-print-table" style={{ width: '100%', borderCollapse: 'collapse', border: 'none', fontSize: '10px' }}>
@@ -229,9 +246,9 @@ export default function ExportQuotationContent({
             <col style={{ width: '1%' }} />
             <col style={{ width: '19%' }} />
             <col style={{ width: '10%' }} />
-            <col style={{ width: '12%' }} />
-            <col style={{ width: '14%' }} />
-            <col style={{ width: '19%' }} />
+            <col style={{ width: '11%' }} />
+            <col style={{ width: '11%' }} />
+            <col style={{ width: '23%' }} />
           </colgroup>
 
           {/* ══ REPEATING HEADER ══ */}
@@ -458,10 +475,21 @@ export default function ExportQuotationContent({
                     <td style={{ borderTop: '1px solid #000', borderBottom: '1px solid #000', padding: '6px' }}>{item.size || ''}</td>
                     <td style={{ borderTop: '1px solid #000', borderBottom: '1px solid #000', padding: '6px' }}>{item.sqmArea || ''}</td>
                     <td style={{ borderTop: '1px solid #000', borderBottom: '1px solid #000', padding: '6px', textAlign: 'center' }}>
-                      {item.quantity}
-                      {!useWmwJoinedPipeline && item.quantity !== '0' ? ' Pos' : ''}
+                      {(() => {
+                        const { qty, uom } = splitQtyAndUom(item.quantity)
+                        const fallbackUom = !useWmwJoinedPipeline && String(item.quantity ?? '').trim() !== '' && String(item.quantity ?? '').trim() !== '0' ? 'Pos' : ''
+                        const uomLabel = uom || fallbackUom
+                        return (
+                          <div className="quotation-qty-uom-cell">
+                            <div className="quotation-qty-value">{qty || '\u00A0'}</div>
+                            {uomLabel ? <div className="quotation-qty-uom">{uomLabel}</div> : null}
+                          </div>
+                        )
+                      })()}
                     </td>
-                    <td style={{ borderTop: '1px solid #000', borderBottom: '1px solid #000', padding: '6px', textAlign: 'right' }}>{formatCurrency(item.rate, currency)}</td>
+                    <td style={{ borderTop: '1px solid #000', borderBottom: '1px solid #000', padding: '6px', textAlign: 'right' }}>
+                      {Number.isFinite(item.rate) ? formatCurrency(item.rate, currency) : ''}
+                    </td>
                     <td style={{ borderTop: '1px solid #000', borderBottom: '1px solid #000', padding: '6px', textAlign: 'right' }}>{formatCurrency(item.amount, currency)}</td>
                   </tr>
                   {useWmwJoinedPipeline && metaBits.length > 0 ? (
@@ -569,7 +597,7 @@ export default function ExportQuotationContent({
                 {currency}
               </td>
               <td style={{ borderTop: '1px solid #000', borderBottom: '1px solid #000', padding: '6px', textAlign: 'right', fontWeight: 'bold' }}>
-                {formatCurrency(totalWithCharges, currency)}
+                <span className="quotation-grand-total-amount">{formatCurrency(totalWithCharges, currency)}</span>
               </td>
             </tr>
 
@@ -585,7 +613,7 @@ export default function ExportQuotationContent({
                 Total:-
               </td>
               <td style={{ borderTop: '1px solid #000', borderBottom: '1px solid #000', padding: '6px', textAlign: 'right', fontWeight: 'bold' }}>
-                {formatCurrency(totalWithCharges, currency)}
+                <span className="quotation-grand-total-amount">{formatCurrency(totalWithCharges, currency)}</span>
               </td>
             </tr>
 

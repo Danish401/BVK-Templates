@@ -284,6 +284,13 @@ export function buildWmwJoinedLineRows(raw: ZohoQuotation | null | undefined): W
   const byRef2 = groupRowsByLastItemRef(rows2)
   const byRef3 = groupRowsByLastItemRef(rows3)
 
+  const parseNumeric = (value: unknown): number => {
+    const s = stringifyField(value).replace(/,/g, '')
+    if (!s) return NaN
+    const n = parseFloat(s)
+    return Number.isFinite(n) ? n : NaN
+  }
+
   return mainRows.map((main, idx) => {
     const lastItemRef = refFromRow(main)
     const ext2 = pickFirstRowForRef(byRef2, lastItemRef)
@@ -314,7 +321,13 @@ export function buildWmwJoinedLineRows(raw: ZohoQuotation | null | undefined): W
       uom: coalesceMainFirst(main, ext2, ext3, 'UOM_Billing'),
       quantity: coalesceMainFirst(main, ext2, ext3, 'Qty'),
       ratePerSqmDisplay: coalesceMainFirst(main, ext2, ext3, 'Total_SQM'),
-      amountDisplay: coalesceMainFirst(main, ext2, ext3, 'Total_Price'),
+      amountDisplay: (() => {
+        const qty = parseNumeric(coalesceMainFirst(main, ext2, ext3, 'Qty'))
+        const rate = parseNumeric(coalesceMainFirst(main, ext2, ext3, 'Total_SQM'))
+        const computed = qty * rate
+        if (Number.isFinite(computed)) return computed.toFixed(2)
+        return coalesceMainFirst(main, ext2, ext3, 'Total_Price')
+      })(),
 
       deliveryDate: desiredDateForRef(desiredRows, lastItemRef),
 

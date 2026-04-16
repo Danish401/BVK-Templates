@@ -146,11 +146,11 @@ export default function Quotation3GoodsTable({ data, rawQuotationData, shippingD
                 }}
               >
                 <colgroup>
-                  <col style={{ width: '40%' }} />
+                  <col style={{ width: '35%' }} />
                   <col style={{ width: '25%' }} />
                   <col style={{ width: '10%' }} />
                   <col style={{ width: '10%' }} />
-                  <col style={{ width: '15%' }} />
+                  <col style={{ width: '20%' }} />
                 </colgroup>
                 <tbody>
                   <tr className="quotation3-goods-title-row">
@@ -309,7 +309,9 @@ export default function Quotation3GoodsTable({ data, rawQuotationData, shippingD
                     </td>
                     <td style={{ ...bd, padding: '5px 6px', fontWeight: 'bold', textAlign: 'right', verticalAlign: 'bottom' }}>USD</td>
                     <td style={{ ...bd, padding: '5px 8px', fontWeight: 'bold', textAlign: 'right', verticalAlign: 'bottom' }}>
-                      {totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      <span className="quotation-grand-total-amount">
+                        {totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </span>
                     </td>
                   </tr>
                   <tr>
@@ -327,7 +329,9 @@ export default function Quotation3GoodsTable({ data, rawQuotationData, shippingD
                     </td>
                     <td style={{ ...bd, padding: '8px 10px', fontWeight: 'bold', textAlign: 'right', verticalAlign: 'middle', fontSize: '13px' }}>Total:-</td>
                     <td style={{ ...bd, padding: '8px 8px', fontWeight: 'bold', textAlign: 'right', verticalAlign: 'middle', fontSize: '13px' }}>
-                      {totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      <span className="quotation-grand-total-amount">
+                        {totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </span>
                     </td>
                   </tr>
                 </tbody>

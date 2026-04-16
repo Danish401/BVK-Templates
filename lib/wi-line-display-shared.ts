@@ -299,7 +299,7 @@ export function buildBvkQuotationTableRows(
       const weaveDisplay = strVal(row.Weave) || strVal(row.Seam_Type)
 
       const qty = strVal(row.Qty ?? row.Quantity ?? row.Pieces)
-      const unitPrice = parseFloat(strVal(row.Selling_Price ?? row.List_Price ?? row.Rate).replace(/,/g, '')) || 0
+      const unitPrice = parseFloat(strVal(row.Selling_Price).replace(/,/g, '')) || 0
       const totalPrice =
         parseFloat(
           strVal(row.Total_Sale_Value ?? row.Net_Selling_Amount ?? row.Gross_Amount ?? row.Total_Price).replace(

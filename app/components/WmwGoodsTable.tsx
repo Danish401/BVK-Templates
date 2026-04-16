@@ -173,7 +173,8 @@ export default function WmwGoodsTable({ data, rawQuotationData, shippingData, he
 
     const sqmArea = productDetail.Total_SQM?.trim() || productDetail.SQM?.trim() || ''
     const quantity = productDetail.Qty?.trim() || item.Qty?.trim() || '0'
-    const rate = parseFloat(String(productDetail.List_Price || '').replace(/,/g, '') || item.Selling_Price?.replace(/,/g, '') || '0')
+    const rateStr = item.Selling_Price?.replace(/,/g, '') || ''
+    const rate = rateStr ? (parseFloat(rateStr) || 0) : NaN
     const amount = parseFloat(item.Net_Selling_Amount?.replace(/,/g, '') || item.Gross_Amount?.replace(/,/g, '') || '0')
 
     const mesh = productDetail.Brand_Category?.trim() || ''
@@ -247,6 +248,16 @@ export default function WmwGoodsTable({ data, rawQuotationData, shippingData, he
 
   const destLabel = finalDestination || portOfDischarge || 'Jaipur'
 
+  const splitQtyAndUom = (value: unknown): { qty: string; uom: string } => {
+    const s = String(value ?? '').trim()
+    if (!s) return { qty: '', uom: '' }
+    const parts = s.split(/\s+/).filter(Boolean)
+    if (parts.length < 2) return { qty: s, uom: '' }
+    const uom = parts.pop() || ''
+    const qty = parts.join(' ')
+    return { qty, uom }
+  }
+
   const chunks = [];
   for (let i = 0; i < displayLineItems.length; i += 5) {
     chunks.push(displayLineItems.slice(i, i + 5));
@@ -279,11 +290,11 @@ export default function WmwGoodsTable({ data, rawQuotationData, shippingData, he
                 }}
               >
                 <colgroup>
-                  <col style={{ width: '15%' }} />
-                  <col style={{ width: '40%' }} />
-                  <col style={{ width: '15%' }} />
-                  <col style={{ width: '15%' }} />
-                  <col style={{ width: '15%' }} />
+                  <col style={{ width: '14%' }} />
+                  <col style={{ width: '38%' }} />
+                  <col style={{ width: '14%' }} />
+                  <col style={{ width: '14%' }} />
+                  <col style={{ width: '20%' }} />
                 </colgroup>
                 <tbody>
                   <tr className="wmw-goods-title-row">
@@ -382,12 +393,22 @@ export default function WmwGoodsTable({ data, rawQuotationData, shippingData, he
                           </div>
                         </td>
                         <td style={{ ...bdItemGrid, padding: '6px', textAlign: 'center', verticalAlign: 'middle' }}>
-                          {row.usesJoinedQuantity
-                            ? row.quantity
-                            : `${row.quantity}${row.quantity !== '0' ? ' Pc' : ''}`}
+                          {row.usesJoinedQuantity ? (
+                            (() => {
+                              const { qty, uom } = splitQtyAndUom(row.quantity)
+                              return (
+                                <div className="quotation-qty-uom-cell">
+                                  <div className="quotation-qty-value">{qty || '\u00A0'}</div>
+                                  {uom ? <div className="quotation-qty-uom">{uom}</div> : null}
+                                </div>
+                              )
+                            })()
+                          ) : (
+                            `${row.quantity}${row.quantity !== '0' ? ' Pc' : ''}`
+                          )}
                         </td>
                         <td style={{ ...bdItemGrid, padding: '6px', textAlign: 'right', verticalAlign: 'middle' }}>
-                          {formatCurrency(row.rate, currency) || '-'}
+                          {Number.isFinite(row.rate) ? formatCurrency(row.rate, currency) : ''}
                         </td>
                         <td style={{ ...bdItemGrid, padding: '6px', textAlign: 'right', verticalAlign: 'middle' }}>
                           {formatCurrency(row.amount, currency) || '-'}
@@ -520,7 +541,7 @@ export default function WmwGoodsTable({ data, rawQuotationData, shippingData, he
                         <td style={{ ...bd, padding: '6px', textAlign: 'center', fontWeight: 'bold' }}>{currency}</td>
                         <td style={{ ...bd, padding: '6px', borderRight: 'none' }} />
                         <td style={{ ...bd, padding: '6px', textAlign: 'right', fontWeight: 'bold' }}>
-                          {formatCurrency(totalWithCharges, currency) || '-'}
+                          <span className="quotation-grand-total-amount">{formatCurrency(totalWithCharges, currency) || '-'}</span>
                         </td>
                       </tr>
 
@@ -539,7 +560,7 @@ export default function WmwGoodsTable({ data, rawQuotationData, shippingData, he
                         <td style={{ ...bd, padding: '6px' }} />
                         <td style={{ ...bd, padding: '6px', fontWeight: 'bold', textAlign: 'right', verticalAlign: 'middle' }}>Total:-</td>
                         <td style={{ ...bd, padding: '6px', fontWeight: 'bold', textAlign: 'right', verticalAlign: 'middle' }}>
-                          {formatCurrency(totalWithCharges, currency) || '-'}
+                          <span className="quotation-grand-total-amount">{formatCurrency(totalWithCharges, currency) || '-'}</span>
                         </td>
                       </tr>
                     </>

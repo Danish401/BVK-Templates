@@ -293,14 +293,18 @@ export default function SaintgobainGoodsTable({ data, rawQuotationData, headerNo
         ? computedSqmArea.toFixed(4)
         : (productDetail.Total_SQM?.trim() || productDetail.SQM?.trim() || '')
     const quantity = parseFloat(productDetail.Qty?.trim() || item.Qty?.trim() || '0')
-    const rate = parseFloat(String(productDetail.List_Price || '').replace(/,/g, '') || item.Selling_Price?.replace(/,/g, '') || '0')
+    const rateStr = item.Selling_Price?.replace(/,/g, '') || ''
+    const rate = rateStr ? (parseFloat(rateStr) || 0) : NaN
     const totalPriceRaw = productDetail.Total_Price
     const totalPriceParsed =
       totalPriceRaw !== undefined && totalPriceRaw !== null && String(totalPriceRaw).trim() !== ''
         ? parseFloat(String(totalPriceRaw).replace(/,/g, ''))
         : NaN
     const amountFromLine = parseFloat(item.Net_Selling_Amount?.replace(/,/g, '') || item.Gross_Amount?.replace(/,/g, '') || '0')
-    const amount = Number.isFinite(totalPriceParsed) ? totalPriceParsed : amountFromLine
+    const computedAmount = quantity * rate
+    const amount = Number.isFinite(computedAmount)
+      ? computedAmount
+      : (Number.isFinite(totalPriceParsed) ? totalPriceParsed : amountFromLine)
 
     const cat2WmwMainRows = toRowArray((rawQuotationData as any)?.Category_2_MM_Database_WMW)
     const cat2ProductDetail = itemRef
@@ -476,12 +480,12 @@ export default function SaintgobainGoodsTable({ data, rawQuotationData, headerNo
                 }}
               >
                 <colgroup>
-                  <col style={{ width: '22%' }} />
-                  <col style={{ width: '30%' }} />
+                  <col style={{ width: '20%' }} />
+                  <col style={{ width: '28%' }} />
                   <col style={{ width: '10%' }} />
+                  <col style={{ width: '11%' }} />
                   <col style={{ width: '12%' }} />
-                  <col style={{ width: '12%' }} />
-                  <col style={{ width: '14%' }} />
+                  <col style={{ width: '19%' }} />
                 </colgroup>
                 <tbody>
                   <tr className="bashundhara-goods-title-row">
@@ -550,7 +554,7 @@ export default function SaintgobainGoodsTable({ data, rawQuotationData, headerNo
                           </div>
                         </td>
                         <td style={{ ...bdItemGrid, padding: '6px', textAlign: 'right', verticalAlign: 'middle' }}>
-                          {formatCurrency(row.rate, currency)}
+                          {Number.isFinite(row.rate) ? formatCurrency(row.rate, currency) : ''}
                         </td>
                         <td style={{ ...bdItemGrid, padding: '6px', textAlign: 'right', verticalAlign: 'middle' }}>
                           {formatCurrency(row.amount, currency)}
@@ -630,26 +634,26 @@ export default function SaintgobainGoodsTable({ data, rawQuotationData, headerNo
                             shall be charged extra
                           </span>
                         </td>
-                        <td style={{ ...bd, padding: '6px', textAlign: 'center', fontWeight: 'bold', verticalAlign: 'middle', width: '11%' }}>
+                        <td style={{ ...bd, padding: '6px', textAlign: 'center', fontWeight: 'bold', verticalAlign: 'middle', width: '10%' }}>
                           <span>{currency}</span>
                         </td>
-                        <td style={{ ...bd, padding: '6px', textAlign: 'right', fontWeight: 'bold', verticalAlign: 'middle', width: '12%' }}>
-                          <span>{formatCurrency(displayGrandTotal, currency)}</span>
+                        <td style={{ ...bd, padding: '6px', textAlign: 'right', fontWeight: 'bold', verticalAlign: 'middle', width: '18%' }}>
+                          <span className="quotation-grand-total-amount">{formatCurrency(displayGrandTotal, currency)}</span>
                         </td>
                       </tr>
 
                       <tr>
-                        <td style={{ ...bd, padding: '4px 8px', fontSize: '10px', verticalAlign: 'top', width: '17%' }}>
+                        <td style={{ ...bd, padding: '4px 8px', fontSize: '10px', verticalAlign: 'top', width: '14%' }}>
                           <span style={{ fontWeight: 'bold', display: 'block', lineHeight: 1.2 }}>Amount Chargeable<br />(In words) :</span>
                         </td>
-                        <td colSpan={3} style={{ ...bd, padding: '4px 8px', fontWeight: 'bold', verticalAlign: 'middle', fontSize: '11px', width: '60%' }}>
+                        <td colSpan={3} style={{ ...bd, padding: '4px 8px', fontWeight: 'bold', verticalAlign: 'middle', fontSize: '11px', width: '58%' }}>
                           {currencyWords} {amountInWords} Only
                         </td>
-                        <td style={{ ...bd, padding: '4px 8px', textAlign: 'right', verticalAlign: 'middle', fontWeight: 'bold', fontSize: '11px', width: '11%' }}>
+                        <td style={{ ...bd, padding: '4px 8px', textAlign: 'right', verticalAlign: 'middle', fontWeight: 'bold', fontSize: '11px', width: '10%' }}>
                           Total:-
                         </td>
-                        <td style={{ ...bd, padding: '4px 8px', textAlign: 'right', verticalAlign: 'middle', fontWeight: 'bold', fontSize: '11px', width: '12%' }}>
-                          {formatCurrency(displayGrandTotal, currency)}
+                        <td style={{ ...bd, padding: '4px 8px', textAlign: 'right', verticalAlign: 'middle', fontWeight: 'bold', fontSize: '11px', width: '18%' }}>
+                          <span className="quotation-grand-total-amount">{formatCurrency(displayGrandTotal, currency)}</span>
                         </td>
                       </tr>
                     </>

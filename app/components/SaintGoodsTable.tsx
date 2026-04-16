@@ -231,14 +231,18 @@ export default function SaintGoodsTable({ data, rawQuotationData, headerNode, fo
         ? computedSqmArea.toFixed(4)
         : (productDetail.Total_SQM?.trim() || productDetail.SQM?.trim() || '')
     const quantity = parseFloat(productDetail.Qty?.trim() || item.Qty?.trim() || '0')
-    const rate = parseFloat(String(productDetail.List_Price || '').replace(/,/g, '') || item.Selling_Price?.replace(/,/g, '') || '0')
+    const rateStr = item.Selling_Price?.replace(/,/g, '') || ''
+    const rate = rateStr ? (parseFloat(rateStr) || 0) : NaN
     const totalPriceRaw = productDetail.Total_Price
     const totalPriceParsed =
       totalPriceRaw !== undefined && totalPriceRaw !== null && String(totalPriceRaw).trim() !== ''
         ? parseFloat(String(totalPriceRaw).replace(/,/g, ''))
         : NaN
     const amountFromLine = parseFloat(item.Net_Selling_Amount?.replace(/,/g, '') || item.Gross_Amount?.replace(/,/g, '') || '0')
-    const amount = Number.isFinite(totalPriceParsed) ? totalPriceParsed : amountFromLine
+    const computedAmount = quantity * rate
+    const amount = Number.isFinite(computedAmount)
+      ? computedAmount
+      : (Number.isFinite(totalPriceParsed) ? totalPriceParsed : amountFromLine)
 
     const cat2WmwMainRows = toRowArray((rawQuotationData as any)?.Category_2_MM_Database_WMW)
     const cat2ProductDetail = itemRef
@@ -368,6 +372,17 @@ export default function SaintGoodsTable({ data, rawQuotationData, headerNode, fo
   const currencyWords =
     currency === 'USD' ? 'US Dollars' : currency === 'INR' ? 'Indian Rupees' : currency === 'EUR' ? 'Euro' : currency
 
+  const renderQtyUomCell = (qty: unknown, uom: unknown) => {
+    const qtyText = String(qty ?? '').trim()
+    const uomText = String(uom ?? '').trim()
+    return (
+      <div className="quotation-qty-uom-cell">
+        <div className="quotation-qty-value">{qtyText || '\u00A0'}</div>
+        {uomText ? <div className="quotation-qty-uom">{uomText}</div> : null}
+      </div>
+    )
+  }
+
   return (
     <div className="quotation-goods-pages-stack">
       <div className="quotation-goods-pages-segment" style={{ pageBreakInside: 'avoid', marginTop: '0' }}>
@@ -386,11 +401,11 @@ export default function SaintGoodsTable({ data, rawQuotationData, headerNode, fo
             }}
           >
             <colgroup>
-              <col style={{ width: '52%' }} />
+              <col style={{ width: '44%' }} />
               <col style={{ width: '12%' }} />
               <col style={{ width: '12%' }} />
               <col style={{ width: '12%' }} />
-              <col style={{ width: '12%' }} />
+              <col style={{ width: '20%' }} />
             </colgroup>
             <tbody>
               <tr>
@@ -560,13 +575,10 @@ export default function SaintGoodsTable({ data, rawQuotationData, headerNode, fo
                         {row.hsnCode || ''}
                       </td>
                       <td style={{ ...contentBdSides, padding: '4px 8px', verticalAlign: 'top' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', paddingLeft: '8px' }}>
-                          <span style={{ textAlign: 'center' }}>{row.quantity || ''}</span>
-                          <span style={{ textAlign: 'left' }}>{row.uom}</span>
-                        </div>
+                        {renderQtyUomCell(row.quantity || '', row.uom)}
                       </td>
                       <td style={{ ...contentBdSides, padding: '4px 10px', textAlign: 'right', verticalAlign: 'top' }}>
-                        {formatCurrency(row.rate, currency)}
+                        {Number.isFinite(row.rate) ? formatCurrency(row.rate, currency) : ''}
                       </td>
                       <td style={{ ...contentBdSides, padding: '4px 10px', textAlign: 'right', verticalAlign: 'top' }}>
                         {formatCurrency(row.amount, currency)}
@@ -599,10 +611,7 @@ export default function SaintGoodsTable({ data, rawQuotationData, headerNode, fo
                 </td>
                 <td style={bd} />
                 <td style={{ ...bd, padding: '6px 8px', verticalAlign: 'middle' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', paddingLeft: '8px' }}>
-                    <span style={{ textAlign: 'center' }}>{primaryQty > 0 ? primaryQty : ''}</span>
-                    <span style={{ textAlign: 'left' }}>{primaryLine?.uom || 'Rolls'}</span>
-                  </div>
+                  {renderQtyUomCell(primaryQty > 0 ? primaryQty : '', primaryLine?.uom || 'Rolls')}
                 </td>
                 <td style={{ ...bd, padding: '6px 10px', textAlign: 'right', verticalAlign: 'middle' }}>
                   {dapChargesTotal > 0 && primaryQty > 0 ? formatCurrency(dapRate, currency) : ''}
@@ -685,7 +694,7 @@ export default function SaintGoodsTable({ data, rawQuotationData, headerNode, fo
                     verticalAlign: 'middle',
                   }}
                 >
-                  {formatCurrency(displayGrandTotal, currency)}
+                  <span className="quotation-grand-total-amount">{formatCurrency(displayGrandTotal, currency)}</span>
                 </td>
               </tr>
             </tbody>

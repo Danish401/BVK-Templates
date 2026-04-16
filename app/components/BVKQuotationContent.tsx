@@ -205,14 +205,10 @@ export default function BVKQuotationContent({ data, shippingData, billingData, r
                             {row.qty ? `${row.qty} Pcs` : '--- Pcs'}
                           </td>
                           <td style={{ border: '1px solid #000', padding: '8px', verticalAlign: 'top' }}>
-                            {row.unitPrice > 0
-                              ? formatCurrency(row.unitPrice, displayCurrency)
-                              : '---.00'}
+                            {row.unitPrice > 0 ? formatCurrency(row.unitPrice, displayCurrency) : ''}
                           </td>
                           <td style={{ border: '1px solid #000', padding: '8px', verticalAlign: 'top' }}>
-                            {row.totalPrice > 0
-                              ? formatCurrency(row.totalPrice, displayCurrency)
-                              : '---.00'}
+                            {row.totalPrice > 0 ? formatCurrency(row.totalPrice, displayCurrency) : ''}
                           </td>
                         </tr>
                       ))}

@@ -125,10 +125,11 @@ export default function EkamasGoodsTable({
 
     const sqmArea = productDetail.Total_SQM?.trim() || productDetail.SQM?.trim() || ''
     const quantity = parseFloat(productDetail.Qty?.trim() || item.Qty?.trim() || '0')
-    const rate = parseFloat(
-      String(productDetail.List_Price || '').replace(/,/g, '') || item.Selling_Price?.replace(/,/g, '') || '0'
-    )
-    const amount = parseFloat(item.Net_Selling_Amount?.replace(/,/g, '') || item.Gross_Amount?.replace(/,/g, '') || '0')
+    const rateStr = item.Selling_Price?.replace(/,/g, '') || ''
+    const rate = rateStr ? (parseFloat(rateStr) || 0) : NaN
+    const amountFromLine = parseFloat(item.Net_Selling_Amount?.replace(/,/g, '') || item.Gross_Amount?.replace(/,/g, '') || '0')
+    const computedAmount = quantity * rate
+    const amount = Number.isFinite(computedAmount) ? computedAmount : amountFromLine
 
     const mesh = productDetail.Brand_Category?.trim() || ''
     const brand = productDetail.Brand_Selling_Name?.trim() || ''
@@ -259,10 +260,10 @@ export default function EkamasGoodsTable({
                 }}
               >
                 <colgroup>
-                  <col style={{ width: '58%' }} />
+                  <col style={{ width: '52%' }} />
                   <col style={{ width: '12%' }} />
-                  <col style={{ width: '15%' }} />
-                  <col style={{ width: '15%' }} />
+                  <col style={{ width: '12%' }} />
+                  <col style={{ width: '24%' }} />
                 </colgroup>
                 <tbody>
                   <tr className="ekamas-goods-title-row">
@@ -413,7 +414,7 @@ export default function EkamasGoodsTable({
                             fontWeight: 'bold',
                           }}
                         >
-                          {formatCurrency(row.rate, '')}
+                          {Number.isFinite(row.rate) ? formatCurrency(row.rate, '') : ''}
                         </td>
                         <td
                           style={{
@@ -503,7 +504,7 @@ export default function EkamasGoodsTable({
                             fontSize: '11px',
                           }}
                         >
-                          {formatCurrency(totalWithCharges, '')}
+                          <span className="quotation-grand-total-amount">{formatCurrency(totalWithCharges, '')}</span>
                         </td>
                       </tr>
 
@@ -518,7 +519,9 @@ export default function EkamasGoodsTable({
                         </td>
                         <td style={{ ...bd, padding: '8px 10px', textAlign: 'right', verticalAlign: 'middle', fontWeight: 'bold' }}>
                           <div style={{ fontSize: '11px', marginBottom: '4px' }}>Total:-</div>
-                          <div style={{ fontSize: '14px' }}>{formatCurrency(totalWithCharges, '')}</div>
+                          <div style={{ fontSize: '14px' }}>
+                            <span className="quotation-grand-total-amount">{formatCurrency(totalWithCharges, '')}</span>
+                          </div>
                         </td>
                       </tr>
 
